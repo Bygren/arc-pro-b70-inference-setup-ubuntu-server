@@ -268,6 +268,20 @@ nano ~/start_agent.sh
 
 Spara filen (`Ctrl+O`, tryck `Enter`) och stäng nano (`Ctrl+X`).
 
+> **💡 Behövs det några nya inställningar för SYCL eller omkompilering?**
+>
+> **Nej!** Du behöver varken kompilera om eller göra nya SYCL-installationer:
+> 1. **Motorn är universell:** `llama-server`-binären i `/opt/llama.cpp/llama-sycl-build/bin/llama-server` är redan färdigkompilerad med oneAPI DPC++/SYCL och stöder alla GGUF-arkitekturer (Mistral, Devstral, Qwen, Llama, Gemma m.fl.).
+> 2. **SYCL-inställningarna ärvs automatiskt:** Eftersom `~/start_agent.sh` redan innehåller:
+>    - `source /opt/intel/oneapi/setvars.sh` (Initierar oneAPI-miljön)
+>    - `--device SYCL0` (Styr körningen till Intel Arc Pro-grafikkortet)
+>    - `-ngl 999` (Lägger alla modellens lager direkt i B70:s snabba VRAM)
+>    - `export UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1` (Låter SYCL allokera upp till 32GB VRAM)
+>    ...kommer den nya modellen automatiskt att köras med full SYCL-acceleration på ditt Arc-kort!
+> 3. **MoE vs Tät (Dense) modell:**
+>    - `export GGML_SYCL_DISABLE_OPT=1`: Detta krävs specifikt för MoE-modeller (som Qwen3-Coder) för att undvika krasch vid slot-initiering. För Devstral (som är en standard tät modell) gör det ingen skada att låta den stå kvar, men du kan även ta bort den.
+>    - `--reasoning off`: Stänger av tänkande `<think>`-block i Qwen-modeller. Devstral har ingen sådan mekanism, så flaggan ignoreras harmlöst.
+
 Starta sedan om agent-tjänsten så att den laddar den nya modellen:
 
 ```bash
