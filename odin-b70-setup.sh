@@ -266,6 +266,7 @@ for deb in libigdgmm12_*.deb intel-igc-core*.deb intel-igc-opencl*.deb libze-int
     [[ -f "$deb" ]] || continue
     dpkg -i "$deb" || echo "    WARNING: Failed to install $deb"
 done
+DEBIAN_FRONTEND=noninteractive apt-get install -f -y -qq 2>/dev/null || true
 ldconfig
 
 cd /
@@ -412,8 +413,8 @@ if [[ -d "${MODEL_PATH}" ]] && [[ $(find "${MODEL_PATH}" -name "*.safetensors" 2
     echo "    Model already downloaded at ${MODEL_PATH}"
 else
     echo "    Installing huggingface_hub..."
-    sudo -u "${REAL_USER}" pip install --break-system-packages -q huggingface_hub 2>/dev/null || \
-    pip install --break-system-packages -q huggingface_hub 2>/dev/null || true
+    sudo -u "${REAL_USER}" python3 -m pip install --break-system-packages -q huggingface_hub 2>/dev/null || \
+    python3 -m pip install --break-system-packages -q huggingface_hub 2>/dev/null || true
 
     echo "    Downloading (this may take a while)..."
     VLLM_MODEL="${VLLM_MODEL}" MODEL_PATH="${MODEL_PATH}" \

@@ -46,10 +46,14 @@ need xorriso
 need wget
 need 7z
 need sed
+if [[ ! -f /usr/lib/grub/i386-pc/boot_hybrid.img ]]; then
+    echo "Missing: /usr/lib/grub/i386-pc/boot_hybrid.img (required for hybrid MBR ISO)"
+    MISSING=1
+fi
 if [[ "$MISSING" == "1" ]]; then
     echo ""
     echo "Install on Ubuntu/WSL with:"
-    echo "  sudo apt-get update && sudo apt-get install -y xorriso p7zip-full wget"
+    echo "  sudo apt-get update && sudo apt-get install -y xorriso p7zip-full wget grub-pc-bin"
     exit 1
 fi
 
