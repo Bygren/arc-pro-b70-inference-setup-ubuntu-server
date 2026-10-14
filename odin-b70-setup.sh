@@ -46,6 +46,10 @@ AUTOCOMPLETE_MODEL_FILE="qwen2.5-coder-1.5b-instruct-q8_0.gguf"
 AUTOCOMPLETE_PORT=8001
 
 BUILD_VLLM="${BUILD_VLLM:-false}"                 # Set to true to build vLLM Docker image from source
+VLLM_PORT="${VLLM_PORT:-8080}"                   # Port for optional vLLM server
+LLAMACPP_PORT="${LLAMACPP_PORT:-8082}"           # Port for optional fallback Vulkan server
+VLLM_MODEL_NAME="${VLLM_MODEL_NAME:-gemma-4-26b-a4b}"
+MODEL_LOCAL_NAME="${MODEL_LOCAL_NAME:-gemma-4-26B-A4B-it}"
 KERNEL_VERSION="6.17.0-20-generic"              # Minimum kernel for B70
 COMPUTE_RUNTIME_VERSION="25.48.36300.8"         # Stable for BMG (do not upgrade)
 IGC_VERSION="v2.24.8"                           # Paired with 25.48 (do not upgrade)
@@ -611,7 +615,7 @@ echo ">>> [9/11] Creating scripts and services"
 
 # Detect GPU count
 GPU_COUNT=$(lspci | grep -c "Intel.*e223" 2>/dev/null || echo 0)
-[[ "$GPU_COUNT" -eq 0 ]] && GPU_COUNT=2  # Default assumption
+[[ "$GPU_COUNT" -eq 0 ]] && GPU_COUNT=1  # Default assumption (single GPU)
 
 # --- vLLM startup script ---
 cat > "${REAL_HOME}/start_vllm.sh" << VLLMSCRIPT
@@ -788,15 +792,16 @@ BOOTEOF
 # --- llama.cpp startup script ---
 cat > "${REAL_HOME}/start_llamacpp.sh" << LLAMASCRIPT
 #!/usr/bin/env bash
-# Start llama.cpp Vulkan server (single-GPU, fast for GGUF models)
-MODEL="\${1:-\${HOME}/models/active_model.gguf}"
-[[ -f "\$MODEL" ]] || { echo "Model not found: \$MODEL"; echo "Usage: \$0 <path_to_gguf>"; exit 1; }
-echo "Starting llama.cpp Vulkan on port ${LLAMACPP_PORT}..."
+# Start llama.cpp Vulkan server (fallback general-purpose server)
+PORT="\${1:-${LLAMACPP_PORT}}"
+MODEL="\${2:-\${HOME}/models/${AGENT_MODEL_FILE}}"
+[[ -f "\$MODEL" ]] || { echo "Model not found: \$MODEL"; echo "Usage: \$0 [port] [path_to_gguf]"; exit 1; }
+echo "Starting llama.cpp Vulkan on port \${PORT}..."
 \${HOME}/llama.cpp/build/bin/llama-server \\
     -m "\$MODEL" -ngl 99 \\
     --flash-attn \\
     --cache-type-k q8_0 --cache-type-v q8_0 \\
-    --host 0.0.0.0 --port ${LLAMACPP_PORT} \\
+    --host 0.0.0.0 --port "\${PORT}" \\
     --ctx-size 4096 --parallel 4 --threads \$(nproc)
 LLAMASCRIPT
 
@@ -820,12 +825,32 @@ echo ""
 echo "=== Vulkan Devices ==="
 vulkaninfo --summary 2>/dev/null | grep -A2 "deviceName" || echo "(not available)"
 echo ""
-echo "=== Services ==="
-docker ps --format "  vLLM Docker: {{.Names}} ({{.Status}})" 2>/dev/null || echo "  Docker: not running"
-if curl -sf -o /dev/null http://127.0.0.1:${VLLM_PORT}/health 2>/dev/null; then
-    echo "  vLLM API: healthy (port ${VLLM_PORT})"
+echo "=== AI Services (Continue) ==="
+if systemctl is-active --quiet llama-agent.service 2>/dev/null; then
+    echo "  llama-agent:        running (port ${AGENT_PORT})"
 else
-    echo "  vLLM API: not running (port ${VLLM_PORT})"
+    echo "  llama-agent:        inactive/stopped"
+fi
+if systemctl is-active --quiet llama-autocomplete.service 2>/dev/null; then
+    echo "  llama-autocomplete: running (port ${AUTOCOMPLETE_PORT})"
+else
+    echo "  llama-autocomplete: inactive/stopped"
+fi
+if curl -sf -o /dev/null http://127.0.0.1:${AGENT_PORT}/v1/models 2>/dev/null; then
+    echo "  Agent API:          healthy (http://localhost:${AGENT_PORT})"
+else
+    echo "  Agent API:          not responding (port ${AGENT_PORT})"
+fi
+if curl -sf -o /dev/null http://127.0.0.1:${AUTOCOMPLETE_PORT}/v1/models 2>/dev/null; then
+    echo "  Autocomplete API:   healthy (http://localhost:${AUTOCOMPLETE_PORT})"
+else
+    echo "  Autocomplete API:   not responding (port ${AUTOCOMPLETE_PORT})"
+fi
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'vllm'; then
+    echo "  vLLM Docker:        running"
+    if curl -sf -o /dev/null http://127.0.0.1:${VLLM_PORT}/health 2>/dev/null; then
+        echo "  vLLM API:           healthy (port ${VLLM_PORT})"
+    fi
 fi
 SYSSCRIPT
 
@@ -844,10 +869,12 @@ while true; do
         fi
     done < <(sensors 2>/dev/null | grep -E "^\s*(pkg|vram):" | grep -v MJ | grep -v W)
     if [ "$MAX_TEMP" -gt 0 ] && [ "$MAX_TEMP" -ge "$THRESHOLD" ]; then
-        echo "$(date): CRITICAL GPU temp ${MAX_TEMP}C >= ${THRESHOLD}C stopping vLLM" | tee -a $LOG
-        docker exec vllm-b70 pkill -f "vllm serve" 2>/dev/null
-        docker stop vllm-b70 2>/dev/null
-        echo "$(date): vLLM stopped for thermal protection" | tee -a $LOG
+        echo "$(date): CRITICAL GPU temp ${MAX_TEMP}C >= ${THRESHOLD}C stopping AI workloads" | tee -a $LOG
+        systemctl stop llama-agent.service 2>/dev/null || true
+        systemctl stop llama-autocomplete.service 2>/dev/null || true
+        docker exec vllm-b70 pkill -f "vllm serve" 2>/dev/null || true
+        docker stop vllm-b70 2>/dev/null || true
+        echo "$(date): AI workloads stopped for thermal protection" | tee -a $LOG
     fi
     sleep 30
 done
@@ -887,8 +914,7 @@ EOF
 cat > /etc/systemd/system/gpu-thermal-watchdog.service << EOF
 [Unit]
 Description=GPU Thermal Watchdog (ODIN)
-After=docker.service
-Requires=docker.service
+After=network.target
 
 [Service]
 Type=simple
@@ -1295,9 +1321,9 @@ if command -v ufw &>/dev/null; then
     ufw allow 22/tcp comment "SSH" 2>/dev/null
     ufw allow "${AGENT_PORT}/tcp" comment "Continue Agent API" 2>/dev/null
     ufw allow "${AUTOCOMPLETE_PORT}/tcp" comment "Continue Autocomplete API" 2>/dev/null
-    ufw allow from 192.168.1.0/24 to any port 8765 proto tcp comment "inference diag HTTP" 2>/dev/null
+    ufw allow 8765/tcp comment "Inference diag HTTP" 2>/dev/null
     ufw --force enable 2>/dev/null
-    echo "    Firewall: ports 22, ${AGENT_PORT}, ${AUTOCOMPLETE_PORT}, 8765 (LAN) open"
+    echo "    Firewall: ports 22, ${AGENT_PORT}, ${AUTOCOMPLETE_PORT}, 8765 open"
 fi
 
 # Install xpu-smi
@@ -1345,9 +1371,11 @@ echo "================================================================"
 echo "Intel B70 Coding Server Setup Complete!"
 echo "================================================================"
 echo ""
-echo "System:"
-echo "  User:         ${REAL_USER}"
-echo "  Kernel:       $(uname -r)${NEED_REBOOT:+ (NEW KERNEL INSTALLED — REBOOT REQUIRED)}"
+REBOOT_MSG=""
+if [[ "${NEED_REBOOT}" == "true" ]]; then
+    REBOOT_MSG=" (NEW KERNEL INSTALLED — REBOOT REQUIRED)"
+fi
+echo "  Kernel:       $(uname -r)${REBOOT_MSG}"
 echo "  GPUs:         ${B70_COUNT}x Intel Arc Pro B70"
 echo "  Models Dir:   /mnt/models"
 echo ""

@@ -91,7 +91,7 @@ sudo ./odin-b70-setup.sh
    * `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` till `/mnt/models`
    * `qwen2.5-coder-1.5b-instruct-q8_0.gguf` till `/mnt/models`
 6. **Systemd-tjänster:** Skapar och aktiverar automatiskt `llama-agent.service` (port 8000) och `llama-autocomplete.service` (port 8001).
-7. **Brandvägg:** Öppnar portarna 22, 8000 och 8001 i UFW.
+7. **Brandvägg:** Öppnar portarna 22 (SSH), 8000 (Agent), 8001 (Autocomplete) och 8765 (Inference Diagnostic HTTP) i UFW.
 
 ---
 
@@ -109,7 +109,13 @@ sudo reboot
 
 Logga in på servern igen efter omstarten och kontrollera statusen:
 
-### 1. Kontrollera grafikkortet
+### 1. Snabb systemstatus via sysinfo
+```bash
+~/sysinfo.sh
+```
+*Detta skript ger dig en direkt översikt av IP-adress, kärna, GPU-temperaturer, Vulkan-enheter och hälsostatus för Continue Agent (port 8000) och Autocomplete (port 8001).*
+
+### 2. Kontrollera grafikkortet
 ```bash
 # Verifiera att B70 identifieras på PCIe-bussen
 lspci -v | grep -i VGA
@@ -119,13 +125,13 @@ lspci -v | grep -i VGA
 lsmod | grep xe
 ```
 
-### 2. Övervaka GPU i realtid
+### 3. Övervaka GPU i realtid
 ```bash
 xpu-smi
 ```
 *Här ser du kortets klockfrekvens, temperatur, strömförbrukning och VRAM-allokering.*
 
-### 3. Kontrollera AI-tjänsterna
+### 4. Kontrollera AI-tjänsterna
 ```bash
 # Kontrollera Agent-tjänsten (Qwen3-Coder)
 sudo systemctl status llama-agent
@@ -134,7 +140,7 @@ sudo systemctl status llama-agent
 sudo systemctl status llama-autocomplete
 ```
 
-### 4. Testa endpointsen via curl
+### 5. Testa endpointsen via curl
 ```bash
 # Testa Agent-endpointen (port 8000)
 curl http://localhost:8000/v1/chat/completions \
@@ -145,6 +151,9 @@ curl http://localhost:8000/v1/chat/completions \
 curl http://localhost:8001/v1/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen2.5-coder-1.5b","prompt":"def fibonacci(n):\n","max_tokens":30}'
+
+# Testa hälsosidan för diagnos (port 8765)
+curl -s http://localhost:8765/ | python3 -m json.tool
 ```
 
 ---
