@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build_iso.sh — Build a bootable Ubuntu 24.04 Server autoinstall USB image
+# build_iso.sh — Build a bootable Ubuntu 24.04 / 26.04 Server autoinstall USB image
 # that lays down Ubuntu, then runs odin-b70-setup.sh on first boot to bring up
 # the full vLLM + 4x Intel Arc Pro B70 stack.
 #
@@ -8,7 +8,12 @@
 #
 # Usage:
 #   bash build_iso.sh                 # use default Ubuntu 24.04.2 mirror
+#   bash build_iso.sh 26.04           # use Ubuntu 26.04 LTS mirror
 #   ISO_URL=... bash build_iso.sh     # override source ISO
+#
+# Environment variables:
+#   UBUNTU_VER=26.04                  # select release (24.04 or 26.04)
+#   ISO_URL=https://...               # direct ISO download URL override
 
 set -euo pipefail
 
@@ -17,7 +22,16 @@ WORK_DIR="${SCRIPT_DIR}/iso_build"
 OUT_ISO="${SCRIPT_DIR}/arc-pro-b70-autoinstall.iso"
 SETUP_SH="${SCRIPT_DIR}/odin-b70-setup.sh"
 
-ISO_URL="${ISO_URL:-https://releases.ubuntu.com/24.04/ubuntu-24.04.2-live-server-amd64.iso}"
+UBUNTU_VER="${1:-${UBUNTU_VER:-24.04}}"
+if [[ "$UBUNTU_VER" =~ ^26 ]]; then
+    DEFAULT_ISO_URL="https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso"
+    UBUNTU_LABEL="26.04"
+else
+    DEFAULT_ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-24.04.2-live-server-amd64.iso"
+    UBUNTU_LABEL="24.04"
+fi
+
+ISO_URL="${ISO_URL:-$DEFAULT_ISO_URL}"
 SRC_ISO="${WORK_DIR}/$(basename "$ISO_URL")"
 
 if [[ ! -f "$SETUP_SH" ]]; then
@@ -180,7 +194,7 @@ fi
 echo ">>> Building $OUT_ISO"
 cd "$EXTRACT_DIR"
 
-# Locate boot images extracted by 7z (Ubuntu 24.04 layout)
+# Locate boot images extracted by 7z (Ubuntu 24.04 / 26.04 layout)
 EFI_IMG="boot/grub/efi.img"
 BIOS_IMG="boot/grub/i386-pc/eltorito.img"
 
@@ -219,7 +233,7 @@ echo "On boot:"
 echo "  1. Boot target machine from USB"
 echo "  2. Select 'Install Intel Arc Pro B70 Inference Server (autoinstall)'"
 echo "  3. Confirm disk when installer pauses on storage"
-echo "  4. Login as user / changeme"
+echo "  4. Login as user / changeme (Ubuntu ${UBUNTU_LABEL})"
 echo "  5. First-boot service runs odin-b70-setup.sh automatically"
 echo "  6. Watch progress: sudo journalctl -fu prob70-firstboot"
 echo "==============================================="

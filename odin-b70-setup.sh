@@ -3,13 +3,13 @@
 # Intel B70 Inference Server — Automated Setup Script v1.2.0
 #
 # Sets up Intel Arc Pro B70 GPUs for LLM inference with vLLM tensor parallelism.
-# Tested on Ubuntu Server 24.04 LTS with 2x and 4x B70 configurations.
+# Tested on Ubuntu Server 24.04 LTS and 26.04 LTS with 2x and 4x B70 configurations.
 #
 # Hardware requirements:
 #   - 1-4x Intel Arc Pro B70 GPUs (32GB VRAM each)
 #   - 64GB+ system RAM (128GB recommended for large MoE models)
 #   - PCIe x16 slots (Gen 3.0+ works, Gen 5.0 optimal)
-#   - Ubuntu Server 24.04 LTS
+#   - Ubuntu Server 24.04 LTS or 26.04 LTS
 #
 # BIOS requirements (must be set manually before running this script):
 #   - Above 4G Decoding: ENABLED
@@ -28,7 +28,7 @@
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_VERSION="1.4.0"
+SCRIPT_VERSION="1.5.0"
 LOG="/var/log/odin-b70-setup.log"
 
 # --- Configuration (edit these) ---
@@ -75,6 +75,25 @@ if [[ -z "$REAL_HOME" || ! -d "$REAL_HOME" ]]; then
 fi
 
 echo "User: ${REAL_USER} | Home: ${REAL_HOME}"
+
+# Detect and validate OS release
+if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    OS_NAME="${NAME:-Ubuntu}"
+    OS_VERSION="${VERSION_ID:-}"
+    OS_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME:-noble}}"
+else
+    echo "WARNING: /etc/os-release not found. Assuming Ubuntu 24.04 LTS."
+    OS_NAME="Ubuntu"
+    OS_VERSION="24.04"
+    OS_CODENAME="noble"
+fi
+
+echo "OS:   ${OS_NAME} ${OS_VERSION} (${OS_CODENAME})"
+if [[ "${ID:-}" != "ubuntu" && "${ID_LIKE:-}" != *"ubuntu"* ]]; then
+    echo "WARNING: This script is intended for Ubuntu Server (24.04 or 26.04 LTS)."
+    echo "         Detected: ${ID:-unknown}"
+fi
 echo ""
 
 # Check for B70 GPUs
@@ -135,7 +154,7 @@ if [[ "$CURRENT_MAJOR" -lt 6 ]] || [[ "$CURRENT_MAJOR" -eq 6 && "$CURRENT_MINOR"
         "linux-modules-extra-${KERNEL_VERSION}" 2>/dev/null || {
             echo "    WARNING: Could not install kernel ${KERNEL_VERSION}."
             echo "    Searching for latest 6.17+ kernel..."
-            KERNEL_VERSION=$(apt-cache search linux-image | grep -E "6\.(1[7-9]|[2-9][0-9]).*generic" | grep -v unsigned | grep -v dbg | sort -V | tail -1 | awk '{print $1}' | sed 's/linux-image-//')
+            KERNEL_VERSION=$(apt-cache search linux-image | grep -E "linux-image-((6\.(1[7-9]|[2-9][0-9]))|([7-9]\.[0-9]+)).*generic" | grep -v unsigned | grep -v dbg | sort -V | tail -1 | awk '{print $1}' | sed 's/linux-image-//')
             if [[ -n "$KERNEL_VERSION" ]]; then
                 echo "    Found: ${KERNEL_VERSION}"
                 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
@@ -191,13 +210,24 @@ echo ">>> [3/11] Intel GPU drivers (compute-runtime ${COMPUTE_RUNTIME_VERSION})"
 mkdir -p /etc/apt/keyrings
 wget -qO- https://repositories.intel.com/gpu/intel-graphics.key | \
     gpg --dearmor -o /etc/apt/keyrings/intel-graphics.gpg 2>/dev/null
+
+INTEL_REPO_CODENAME="${OS_CODENAME:-noble}"
+# Test if Intel repository supports current release; fallback to noble if not yet available
+if ! curl -fsIL "https://repositories.intel.com/gpu/ubuntu/dists/${INTEL_REPO_CODENAME}/InRelease" >/dev/null 2>&1; then
+    if [[ "$INTEL_REPO_CODENAME" != "noble" ]]; then
+        echo "    Notice: Intel repository does not yet index '${INTEL_REPO_CODENAME}', using 'noble' unified repo."
+        INTEL_REPO_CODENAME="noble"
+    fi
+fi
+
 echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/intel-graphics.gpg] \
-https://repositories.intel.com/gpu/ubuntu noble unified" \
+https://repositories.intel.com/gpu/ubuntu ${INTEL_REPO_CODENAME} unified" \
     > /etc/apt/sources.list.d/intel-gpu.list
 apt-get update -qq
 
 # Install Level Zero loader
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq level-zero libze1 2>/dev/null || true
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq level-zero libze1 2>/dev/null || \
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libze-dev libze1 2>/dev/null || true
 
 # Install compute-runtime from GitHub (APT repo version doesn't support BMG e223)
 echo "    Downloading compute-runtime ${COMPUTE_RUNTIME_VERSION} from GitHub..."
@@ -832,11 +862,11 @@ EOF
 # --- VRAM cleanup helper (pre-start hook) ---
 # Reclaims VRAM held by crashed vLLM workers before re-launching the model.
 # Prevents level_zero UR_RESULT_ERROR_OUT_OF_DEVICE_MEMORY on dirty restarts.
-CLEANUP_SCRIPT_PATH="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/vllm_vram_cleanup.sh"
-if [[ -f "\$CLEANUP_SCRIPT_PATH" ]]; then
-    install -m755 "\$CLEANUP_SCRIPT_PATH" /usr/local/bin/vllm_vram_cleanup.sh
+CLEANUP_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vllm_vram_cleanup.sh"
+if [[ -f "$CLEANUP_SCRIPT_PATH" ]]; then
+    install -m755 "$CLEANUP_SCRIPT_PATH" /usr/local/bin/vllm_vram_cleanup.sh
 else
-    curl -fsSL https://raw.githubusercontent.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server/master/vllm_vram_cleanup.sh \
+    curl -fsSL https://raw.githubusercontent.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server/master/vllm_vram_cleanup.sh \
         -o /usr/local/bin/vllm_vram_cleanup.sh
     chmod 755 /usr/local/bin/vllm_vram_cleanup.sh
 fi
@@ -847,17 +877,17 @@ fi
 # hang (xe_guc_submit.c:1291 guc_exec_queue_timedout_job) seen on Gemma 4
 # 26B-A4B FP8 TP=4 enforce_eager workloads where a single compute submission
 # can exceed the 5000 ms default timeout.
-XE_TUNING_SRC="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/xe_tuning.sh"
-if [[ -f "\$XE_TUNING_SRC" ]]; then
-    install -m755 "\$XE_TUNING_SRC" /usr/local/bin/xe_tuning.sh
+XE_TUNING_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/xe_tuning.sh"
+if [[ -f "$XE_TUNING_SRC" ]]; then
+    install -m755 "$XE_TUNING_SRC" /usr/local/bin/xe_tuning.sh
 fi
-XE_TMPFILES_SRC="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/tmpfiles.d/xe-gpu-tuning.conf"
-if [[ -f "\$XE_TMPFILES_SRC" ]]; then
-    install -m644 "\$XE_TMPFILES_SRC" /etc/tmpfiles.d/xe-gpu-tuning.conf
+XE_TMPFILES_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tmpfiles.d/xe-gpu-tuning.conf"
+if [[ -f "$XE_TMPFILES_SRC" ]]; then
+    install -m644 "$XE_TMPFILES_SRC" /etc/tmpfiles.d/xe-gpu-tuning.conf
 fi
-XE_UNIT_SRC="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/systemd/xe-tuning.service"
-if [[ -f "\$XE_UNIT_SRC" ]]; then
-    install -m644 "\$XE_UNIT_SRC" /etc/systemd/system/xe-tuning.service
+XE_UNIT_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/systemd/xe-tuning.service"
+if [[ -f "$XE_UNIT_SRC" ]]; then
+    install -m644 "$XE_UNIT_SRC" /etc/systemd/system/xe-tuning.service
     systemctl daemon-reload
     systemctl enable xe-tuning.service
 fi
@@ -901,12 +931,12 @@ EOF
 #   events.log        state-transition events (card count change, vllm down)
 #   detail-YYYY-MM-DD.log   per-day full detail dump (rotated after 14 days)
 #   dmesg-last.txt    full dmesg snapshot at the most recent failure
-SCRIPT_PATH="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/gpu_diag_logger.sh"
-if [[ -f "\$SCRIPT_PATH" ]]; then
-    install -m755 "\$SCRIPT_PATH" /usr/local/bin/gpu_diag_logger.sh
+SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gpu_diag_logger.sh"
+if [[ -f "$SCRIPT_PATH" ]]; then
+    install -m755 "$SCRIPT_PATH" /usr/local/bin/gpu_diag_logger.sh
 else
     # Fallback: install from GitHub raw URL if running odin-b70-setup.sh standalone
-    curl -fsSL https://raw.githubusercontent.com/Hal9000AIML/arc-pro-b70-inference-setup/master/gpu_diag_logger.sh \
+    curl -fsSL https://raw.githubusercontent.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server/master/gpu_diag_logger.sh \
         -o /usr/local/bin/gpu_diag_logger.sh
     chmod 755 /usr/local/bin/gpu_diag_logger.sh
 fi
@@ -1001,11 +1031,12 @@ try:
 except Exception as _e:
     import sys; sys.stderr.write('[_tok_fix] ' + str(_e) + chr(10))
 TOKFIX
-    cat > /tmp/z_tokenizer_fix.pth << 'PTH'
-import sys; exec(open('/opt/venv/lib/python3.12/site-packages/_tok_fix.py').read()) if __import__('os').path.exists('/opt/venv/lib/python3.12/site-packages/_tok_fix.py') else None
+    CONTAINER_SITE_PACKAGES=$(docker exec vllm-b70 python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || echo "/opt/venv/lib/python3.12/site-packages")
+    cat > /tmp/z_tokenizer_fix.pth << PTH
+import sys; exec(open('${CONTAINER_SITE_PACKAGES}/_tok_fix.py').read()) if __import__('os').path.exists('${CONTAINER_SITE_PACKAGES}/_tok_fix.py') else None
 PTH
-    docker cp /tmp/_tok_fix.py vllm-b70:/opt/venv/lib/python3.12/site-packages/_tok_fix.py
-    docker cp /tmp/z_tokenizer_fix.pth vllm-b70:/opt/venv/lib/python3.12/site-packages/z_tokenizer_fix.pth
+    docker cp /tmp/_tok_fix.py "vllm-b70:${CONTAINER_SITE_PACKAGES}/_tok_fix.py"
+    docker cp /tmp/z_tokenizer_fix.pth "vllm-b70:${CONTAINER_SITE_PACKAGES}/z_tokenizer_fix.pth"
     docker exec vllm-b70 python3 -c "import tokenizers; assert getattr(tokenizers.Tokenizer, '_dc_patched', False), 'patch not applied'; print('[+] tokenizer deepcopy patch: OK')"
 
     # 2) Gemma 4 tokenizer.json legacy merges conversion (model-side, persistent)
@@ -1097,8 +1128,25 @@ fi
 
 # Install xpu-smi
 echo "    Installing xpu-smi..."
+DIST_TAG="u24"
+if [[ "${OS_VERSION}" =~ ^26 ]]; then
+    DIST_TAG="u26"
+fi
+
 XPUSMI_URL=$(curl -s https://api.github.com/repos/intel/xpumanager/releases/latest 2>/dev/null | \
-    python3 -c "import json,sys; [print(a['browser_download_url']) for a in json.load(sys.stdin).get('assets',[]) if 'u24' in a['name'] and a['name'].endswith('.deb')]" 2>/dev/null | head -1)
+    DIST_TAG="${DIST_TAG}" python3 -c "
+import json, sys, os
+tag = os.environ.get('DIST_TAG', 'u24')
+try:
+    assets = [a['browser_download_url'] for a in json.load(sys.stdin).get('assets', []) if a['name'].endswith('.deb')]
+    matched = [u for u in assets if tag in u]
+    if not matched and tag != 'u24':
+        matched = [u for u in assets if 'u24' in u]
+    if matched:
+        print(matched[0])
+except Exception:
+    pass
+" 2>/dev/null | head -1)
 if [[ -n "$XPUSMI_URL" && "$XPUSMI_URL" == https://github.com/intel/xpumanager/* ]]; then
     XPUSMI_TMP=$(mktemp)
     wget -q "$XPUSMI_URL" -O "$XPUSMI_TMP"

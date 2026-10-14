@@ -1,7 +1,8 @@
 # Intel Arc Pro B70 LLM Inference Server — Ubuntu Server Edition
 
-> **Ubuntu Server 24.04 LTS** install. For the Windows installer, see
-> [arc-pro-b70-inference-setup-windows](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-windows).
+> **Ubuntu Server 24.04 LTS / 26.04 LTS** install.
+>
+> **Note:** Maintained by [Bygren](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server), based on [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server). Adds Ubuntu 26.04 LTS compatibility, driver resilience, and script bugfixes.
 >
 > **After setup, apply the performance tuning kit** at
 > [arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes)
@@ -32,7 +33,7 @@ Automated setup script for running LLM inference on Intel Arc Pro B70 GPUs with 
 | **Model Storage** | 4TB SSD |
 | **PSU** | EVGA SuperNOVA 1600 G+ |
 | **Case** | Phanteks Enthoo Pro |
-| **OS** | Ubuntu Server 24.04 LTS, kernel 6.17+ |
+| **OS** | Ubuntu Server 24.04 LTS or 26.04 LTS, kernel 6.17+ |
 
 > **RAM speed note:** The Threadripper 1900X memory controller officially supports DDR4-2400, with the X399
 > platform (Zenith Extreme) pushing up to DDR4-2666 reliably at full population (4 DIMMs, one per channel).
@@ -92,7 +93,7 @@ There are two ways to bring up a fresh machine:
 
 ### Option A — Bootable USB (recommended for clean hardware)
 
-Builds an Ubuntu 24.04 Server autoinstall USB that lays down the OS and runs
+Builds an Ubuntu Server (24.04 or 26.04 LTS) autoinstall USB that lays down the OS and runs
 the full stack setup automatically on first boot. No manual steps after disk
 selection.
 
@@ -100,10 +101,12 @@ selection.
 # On any Linux box or WSL — install build deps once
 sudo apt-get install -y xorriso p7zip-full wget
 
-# Clone and build the ISO (downloads Ubuntu 24.04.2 ~3 GB on first run)
-git clone https://github.com/Hal9000AIML/arc-pro-b70-inference-setup.git
-cd arc-pro-b70-inference-setup
-bash build_iso.sh
+# Clone and build the ISO (downloads Ubuntu ISO ~3 GB on first run)
+git clone git@github.com:Bygren/arc-pro-b70-inference-setup-ubuntu-server.git
+cd arc-pro-b70-inference-setup-ubuntu-server
+bash build_iso.sh          # Default: Ubuntu 24.04.2
+# or for Ubuntu 26.04 LTS:
+# bash build_iso.sh 26.04
 
 # Output: arc-pro-b70-autoinstall.iso (~3 GB)
 # Write to USB with Rufus (DD mode), Balena Etcher, or:
@@ -113,7 +116,7 @@ sudo dd if=arc-pro-b70-autoinstall.iso of=/dev/sdX bs=4M status=progress oflag=s
 **On the target machine:**
 1. Boot from USB and select **"Install Intel Arc Pro B70 Inference Server (autoinstall)"** (default, 10s timeout)
 2. Installer runs unattended but **pauses on storage** so you confirm the target disk (protection against wiping the wrong machine)
-3. Reboots into Ubuntu 24.04 — login as `user` / `changeme`
+3. Reboots into Ubuntu — login as `user` / `changeme`
 4. `prob70-firstboot.service` automatically runs `odin-b70-setup.sh`
 5. Watch progress: `sudo journalctl -fu prob70-firstboot`
 
@@ -123,7 +126,7 @@ The first-boot service is idempotent — it touches `/var/lib/prob70/installed` 
 
 ```bash
 # Download
-wget https://raw.githubusercontent.com/Hal9000AIML/arc-pro-b70-inference-setup/main/odin-b70-setup.sh
+wget https://raw.githubusercontent.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server/master/odin-b70-setup.sh
 chmod +x odin-b70-setup.sh
 
 # Run (takes 20-40 minutes — builds llama.cpp with SYCL backend)
@@ -164,7 +167,7 @@ curl http://localhost:8000/v1/chat/completions \
 
 ```
   ┌──────────────────────────────────────────────────────────┐
-  │                   Ubuntu 24.04 Host                      │
+  │               Ubuntu 24.04 / 26.04 Host                  │
   │                                                          │
   │  Port 8000           Port 8001           Port 8002       │
   │  llama-server        llama-server        llama-server    │
