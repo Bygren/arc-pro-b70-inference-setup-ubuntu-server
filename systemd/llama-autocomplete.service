@@ -1,0 +1,17 @@
+[Unit]
+Description=llama.cpp SYCL - Qwen2.5-Coder 1.5B (Autocomplete, port 8001)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+ExecStart=/home/user/start_autocomplete.sh
+StandardOutput=append:/tmp/llama-autocomplete.log
+StandardError=append:/tmp/llama-autocomplete.log
+
+[Install]
+WantedBy=multi-user.target

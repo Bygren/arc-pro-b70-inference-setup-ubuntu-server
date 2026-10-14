@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Intel B70 Inference Server — Automated Setup Script v1.2.0
+# Intel B70 Inference Server — Automated Setup Script v1.7.0
+# VS Code Continue Coding Edition (Qwen3-Coder 30B-A3B + Qwen2.5-Coder 1.5B)
 #
-# Sets up Intel Arc Pro B70 GPUs for LLM inference with:
-#   1. vLLM tensor parallelism (multi-GPU) inside Docker
-#   2. llama.cpp SYCL backend (Intel oneAPI DPC++/SYCL + 11 B70 Xe2 patches)
-#   3. llama.cpp Vulkan backend (optimized warptile + coopmat fallback)
-# Tested on Ubuntu Server 24.04 LTS and 26.04 LTS with 2x and 4x B70 configurations.
+# Sets up Intel Arc Pro B70 GPUs for LLM coding & inference with:
+#   1. llama.cpp SYCL backend (Intel oneAPI DPC++/SYCL + 11 B70 Xe2 patches)
+#   2. VS Code Continue Agent: Qwen3-Coder 30B-A3B-Instruct (Q4_K_M) on port 8000
+#   3. VS Code Continue Autocomplete: Qwen2.5-Coder-1.5B (Q8_0) on port 8001
+#   4. Optional vLLM multi-GPU tensor parallelism inside Docker
+# Tested on Ubuntu Server 24.04 LTS and 26.04 LTS with 1x, 2x and 4x B70 configurations.
 #
 # Hardware requirements:
 #   - 1-4x Intel Arc Pro B70 GPUs (32GB VRAM each)
-#   - 64GB+ system RAM (128GB recommended for large MoE models)
+#   - 64GB+ system RAM (128GB recommended)
 #   - PCIe x16 slots (Gen 3.0+ works, Gen 5.0 optimal)
 #   - Ubuntu Server 24.04 LTS or 26.04 LTS
 #
@@ -24,31 +26,30 @@
 #   sudo ./odin-b70-setup.sh
 #
 # After running, reboot and then:
-#   ~/boot_vllm.sh        # Start vLLM with tensor parallelism
-#   ~/start_gemma.sh      # Start llama.cpp SYCL tier on port 8000
-#   ~/start_llamacpp.sh   # Or start single-GPU Vulkan fallback
-#
-# Based on testing by Level1Techs (550 tok/s on 4x B70)
+#   systemctl status llama-agent         # Status of Qwen3-Coder Agent (port 8000)
+#   systemctl status llama-autocomplete  # Status of Qwen2.5-Coder Autocomplete (port 8001)
+#   ~/start_agent.sh                     # Manual start for Agent
+#   ~/start_autocomplete.sh              # Manual start for Autocomplete
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_VERSION="1.6.0"
+SCRIPT_VERSION="1.7.0"
 LOG="/var/log/odin-b70-setup.log"
 
 # --- Configuration (edit these) ---
-VLLM_MODEL="google/gemma-4-26B-A4B-it"             # HuggingFace model for vLLM
-VLLM_MODEL_NAME="gemma-4-26B-A4B"                   # Served model name
-VLLM_PORT=8000                                  # vLLM API port
-LLAMACPP_PORT=8080                              # llama.cpp fallback port
+AGENT_MODEL_REPO="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF"
+AGENT_MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+AGENT_PORT=8000
+
+AUTOCOMPLETE_MODEL_REPO="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
+AUTOCOMPLETE_MODEL_FILE="qwen2.5-coder-1.5b-instruct-q8_0.gguf"
+AUTOCOMPLETE_PORT=8001
+
+BUILD_VLLM="${BUILD_VLLM:-false}"                 # Set to true to build vLLM Docker image from source
 KERNEL_VERSION="6.17.0-20-generic"              # Minimum kernel for B70
-# IMPORTANT: compute-runtime 26.09 + IGC 2.30.1 introduced a JIT null-deref on
-# Battlemage during model.forward (libigc.so.2.30.1 at offset ~0x23c0dfc).
-# We stay on 25.48.36300.8 + IGC 2.24.8, paired with UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
-# which routes around the 25.48 libze GPF vtable bug (vllm-docker.service env).
-# Do NOT upgrade to 26.09 until Intel ships IGC 2.30.2+ with the JIT fix.
-COMPUTE_RUNTIME_VERSION="25.48.36300.8"         # Stable for BMG + vLLM (do not upgrade)
+COMPUTE_RUNTIME_VERSION="25.48.36300.8"         # Stable for BMG (do not upgrade)
 IGC_VERSION="v2.24.8"                           # Paired with 25.48 (do not upgrade)
-VLLM_DOCKER_IMAGE="vllm-xpu:gemma4-fixed"      # See post-install hook for patches baked in
+VLLM_DOCKER_IMAGE="vllm-xpu:gemma4-fixed"
 # ----------------------------------
 
 touch "$LOG" && chmod 600 "$LOG"
@@ -395,31 +396,36 @@ fi
 echo "    Done."
 
 # -----------------------------------------------------------
-# 5. Build vLLM Docker image from source (Gemma 4 support)
+# 5. Build vLLM Docker image from source (Optional)
 # -----------------------------------------------------------
 echo ""
-echo ">>> [5/11] Building vLLM XPU Docker image from source"
-echo "    This builds from vLLM main branch for latest model support."
-echo "    This will take 30-60 minutes..."
+if [[ "${BUILD_VLLM}" == "true" ]]; then
+    echo ">>> [5/11] Building vLLM XPU Docker image from source"
+    echo "    This builds from vLLM main branch for latest model support."
+    echo "    This will take 30-60 minutes..."
 
-VLLM_BUILD_DIR=$(mktemp -d)
-cd "$VLLM_BUILD_DIR"
-sudo -u "${REAL_USER}" git clone --depth 1 https://github.com/vllm-project/vllm.git .
+    VLLM_BUILD_DIR=$(mktemp -d)
+    cd "$VLLM_BUILD_DIR"
+    sudo -u "${REAL_USER}" git clone --depth 1 https://github.com/vllm-project/vllm.git .
 
-if ! docker buildx build -f docker/Dockerfile.xpu -t "${VLLM_DOCKER_IMAGE}" --target vllm-openai --load . 2>&1 | tee -a "$LOG"; then
-    echo "    ERROR: vLLM Docker build failed"
-    echo "    Falling back to pre-built image..."
-    docker pull intel/vllm:0.17.0-xpu
-    VLLM_DOCKER_IMAGE="intel/vllm:0.17.0-xpu"
+    if ! docker buildx build -f docker/Dockerfile.xpu -t "${VLLM_DOCKER_IMAGE}" --target vllm-openai --load . 2>&1 | tee -a "$LOG"; then
+        echo "    ERROR: vLLM Docker build failed"
+        echo "    Falling back to pre-built image..."
+        docker pull intel/vllm:0.17.0-xpu
+        VLLM_DOCKER_IMAGE="intel/vllm:0.17.0-xpu"
+    fi
+
+    # Upgrade transformers inside container for architecture support
+    echo "    Upgrading transformers inside container..."
+    docker run --rm "${VLLM_DOCKER_IMAGE}" pip install 'transformers>=4.59' 2>/dev/null || true
+
+    cd /
+    rm -rf "$VLLM_BUILD_DIR"
+    echo "    Done."
+else
+    echo ">>> [5/11] Skipping vLLM Docker build (using llama.cpp SYCL backend for Continue)"
+    echo "    (Set BUILD_VLLM=true if you want to build vLLM container)"
 fi
-
-# Upgrade transformers inside container for Gemma 4 architecture support
-echo "    Upgrading transformers for Gemma 4 support..."
-docker run --rm "${VLLM_DOCKER_IMAGE}" pip install 'transformers>=4.59' 2>/dev/null || true
-
-cd /
-rm -rf "$VLLM_BUILD_DIR"
-echo "    Done."
 
 # -----------------------------------------------------------
 # 6. Build llama.cpp (SYCL and Vulkan with B70 Xe2 patches)
@@ -500,56 +506,56 @@ chown -R "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/llama.cpp"
 ln -sf "${LLAMA_VK_BUILD}/bin/llama-server" "${REAL_HOME}/llama.cpp/build/bin/llama-server"
 
 # -----------------------------------------------------------
-# 7. Download default model
+# 7. Download coding models for Continue (Agent & Autocomplete)
 # -----------------------------------------------------------
 echo ""
-echo ">>> [7/11] Downloading model: ${VLLM_MODEL}"
+echo ">>> [7/11] Downloading coding models for VS Code Continue"
 
-MODEL_DIR="${REAL_HOME}/models"
-MODEL_LOCAL_NAME=$(echo "$VLLM_MODEL" | tr '/' '-')
-MODEL_PATH="${MODEL_DIR}/${MODEL_LOCAL_NAME}"
+MODEL_DIR="/mnt/models"
+mkdir -p "${MODEL_DIR}"
+chown -R "${REAL_USER}:${REAL_USER}" "${MODEL_DIR}"
+ln -sfn "${MODEL_DIR}" "${REAL_HOME}/models"
 
-sudo -u "${REAL_USER}" mkdir -p "${MODEL_DIR}"
+echo "    Installing huggingface_hub..."
+sudo -u "${REAL_USER}" python3 -m pip install --break-system-packages -q huggingface_hub 2>/dev/null || \
+python3 -m pip install --break-system-packages -q huggingface_hub 2>/dev/null || true
 
-if [[ -d "${MODEL_PATH}" ]] && [[ $(find "${MODEL_PATH}" -name "*.safetensors" 2>/dev/null | wc -l) -gt 0 ]]; then
-    echo "    Model already downloaded at ${MODEL_PATH}"
-else
-    echo "    Installing huggingface_hub..."
-    sudo -u "${REAL_USER}" python3 -m pip install --break-system-packages -q huggingface_hub 2>/dev/null || \
-    python3 -m pip install --break-system-packages -q huggingface_hub 2>/dev/null || true
+echo "    Checking/Downloading models:"
+echo "      - Agent:        ${AGENT_MODEL_FILE} (${AGENT_MODEL_REPO})"
+echo "      - Autocomplete: ${AUTOCOMPLETE_MODEL_FILE} (${AUTOCOMPLETE_MODEL_REPO})"
 
-    echo "    Downloading (this may take a while)..."
-    VLLM_MODEL="${VLLM_MODEL}" MODEL_PATH="${MODEL_PATH}" \
-    sudo -u "${REAL_USER}" python3 - << 'PYEOF'
+AGENT_REPO="${AGENT_MODEL_REPO}" AGENT_FILE="${AGENT_MODEL_FILE}" \
+AC_REPO="${AUTOCOMPLETE_MODEL_REPO}" AC_FILE="${AUTOCOMPLETE_MODEL_FILE}" \
+MODEL_DIR="${MODEL_DIR}" \
+sudo -u "${REAL_USER}" python3 - << 'PYEOF'
 import os
-from huggingface_hub import snapshot_download
-snapshot_download(os.environ['VLLM_MODEL'], local_dir=os.environ['MODEL_PATH'])
-print('Download complete!')
+from huggingface_hub import hf_hub_download
+
+models = [
+    (os.environ['AGENT_REPO'], os.environ['AGENT_FILE']),
+    (os.environ['AC_REPO'], os.environ['AC_FILE'])
+]
+model_dir = os.environ['MODEL_DIR']
+
+for repo, filename in models:
+    dest = os.path.join(model_dir, filename)
+    if os.path.exists(dest) and os.path.getsize(dest) > 100000000:
+        print(f"    [SKIP] {filename} already exists ({os.path.getsize(dest)} bytes)")
+    else:
+        print(f"    [DOWNLOADING] {filename} from {repo} (this may take a few minutes)...")
+        hf_hub_download(repo_id=repo, filename=filename, local_dir=model_dir)
+        print(f"    [OK] Downloaded {filename}!")
 PYEOF
-fi
 
 echo "    Done."
 
 # -----------------------------------------------------------
-# 8. Create chat template and swap file
+# 8. Swap configuration & Continue configuration generator
 # -----------------------------------------------------------
 echo ""
-echo ">>> [8/11] Chat template and swap configuration"
+echo ">>> [8/11] Swap configuration and Continue VS Code setup"
 
-# Create Gemma 4 chat template (required by transformers 5.x)
-cat > "${MODEL_PATH}/chat_template.jinja" << 'CHATEOF'
-{{ bos_token }}{% for message in messages %}{% if message['role'] == 'system' %}<start_of_turn>system
-{{ message['content'] }}<end_of_turn>
-{% elif message['role'] == 'user' %}<start_of_turn>user
-{{ message['content'] }}<end_of_turn>
-{% elif message['role'] == 'assistant' %}<start_of_turn>model
-{{ message['content'] }}<end_of_turn>
-{% endif %}{% endfor %}<start_of_turn>model
-CHATEOF
-chown "${REAL_USER}:${REAL_USER}" "${MODEL_PATH}/chat_template.jinja"
-echo "    Chat template created"
-
-# Create swap file if RAM < 64GB (needed for mmap of large model shards)
+# Create swap file if RAM < 64GB
 TOTAL_RAM_GB=$(awk '/MemTotal/ {printf "%d", $2/1024/1024}' /proc/meminfo)
 if [[ "$TOTAL_RAM_GB" -lt 64 ]]; then
     SWAP_SIZE=$((64 - TOTAL_RAM_GB + 16))
@@ -567,6 +573,34 @@ if [[ "$TOTAL_RAM_GB" -lt 64 ]]; then
 else
     echo "    System has ${TOTAL_RAM_GB}GB RAM — no extra swap needed"
 fi
+
+# Generate Continue config.json snippet in user home
+CONTINUE_DIR="${REAL_HOME}/.continue"
+mkdir -p "${CONTINUE_DIR}"
+HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+[[ -z "${HOST_IP}" ]] && HOST_IP="127.0.0.1"
+
+cat > "${CONTINUE_DIR}/config.json.example" << CONTINUEDOC
+{
+  "models": [
+    {
+      "title": "Qwen3-Coder 30B-A3B (Agent)",
+      "provider": "openai",
+      "model": "qwen3-coder-30b",
+      "apiBase": "http://${HOST_IP}:${AGENT_PORT}/v1",
+      "contextLength": 32768
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Qwen2.5-Coder 1.5B (Autocomplete)",
+    "provider": "openai",
+    "model": "qwen2.5-coder-1.5b",
+    "apiBase": "http://${HOST_IP}:${AUTOCOMPLETE_PORT}/v1"
+  }
+}
+CONTINUEDOC
+chown -R "${REAL_USER}:${REAL_USER}" "${CONTINUE_DIR}"
+echo "    Generated Continue configuration example at ${CONTINUE_DIR}/config.json.example"
 echo "    Done."
 
 # -----------------------------------------------------------
@@ -1084,18 +1118,18 @@ Unit=gpu-diag-timer.service
 WantedBy=timers.target
 EOF
 
-# Stage SYCL/Vulkan tier start scripts in user home
+# Stage SYCL start scripts in user home
 SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-for s in start_gemma.sh start_coder.sh start_fast.sh start_pentest.sh; do
+for s in start_agent.sh start_autocomplete.sh; do
     if [[ -f "${SETUP_DIR}/${s}" ]]; then
         install -m 0755 "${SETUP_DIR}/${s}" "${REAL_HOME}/${s}"
         chown "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/${s}"
     fi
 done
-if [[ -f "${REAL_HOME}/start_pentest.sh" ]]; then
-    ln -sf "${REAL_HOME}/start_pentest.sh" "${REAL_HOME}/start_redsage.sh"
-    chown -h "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/start_redsage.sh"
-fi
+
+# Compatibility symlink: start_coder.sh -> start_agent.sh
+ln -sf "${REAL_HOME}/start_agent.sh" "${REAL_HOME}/start_coder.sh"
+chown -h "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/start_coder.sh"
 
 # Ensure model directory /mnt/models exists
 mkdir -p /mnt/models
@@ -1106,7 +1140,15 @@ if [[ -f "${SETUP_DIR}/systemd/llamacpp@.service" ]]; then
     install -m 0644 "${SETUP_DIR}/systemd/llamacpp@.service" /etc/systemd/system/llamacpp@.service
 fi
 
-for svc in llama-gemma.service llama-coder.service llama-fast.service; do
+# Clean up deprecated services if they exist
+for old_svc in llama-gemma.service llama-coder.service llama-fast.service; do
+    systemctl stop "${old_svc}" 2>/dev/null || true
+    systemctl disable "${old_svc}" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${old_svc}"
+done
+
+# Install and configure Continue Agent and Autocomplete services
+for svc in llama-agent.service llama-autocomplete.service; do
     if [[ -f "${SETUP_DIR}/systemd/${svc}" ]]; then
         sed -e "s|User=.*|User=${REAL_USER}|g" \
             -e "s|/home/[^/]*/start_|${REAL_HOME}/start_|g" \
@@ -1115,10 +1157,9 @@ for svc in llama-gemma.service llama-coder.service llama-fast.service; do
 done
 
 systemctl daemon-reload
-systemctl enable vllm-docker.service
-systemctl enable vllm-serve.service
+systemctl enable llama-agent.service
+systemctl enable llama-autocomplete.service
 systemctl enable gpu-thermal-watchdog.service
-systemctl enable vllm-watchdog.service
 systemctl enable gpu-diag-boot.service
 systemctl enable gpu-diag-timer.timer
 
@@ -1252,11 +1293,11 @@ echo ">>> [10/11] Firewall & monitoring"
 
 if command -v ufw &>/dev/null; then
     ufw allow 22/tcp comment "SSH" 2>/dev/null
-    ufw allow "${VLLM_PORT}/tcp" comment "vLLM API" 2>/dev/null
-    ufw allow "${LLAMACPP_PORT}/tcp" comment "llama.cpp" 2>/dev/null
+    ufw allow "${AGENT_PORT}/tcp" comment "Continue Agent API" 2>/dev/null
+    ufw allow "${AUTOCOMPLETE_PORT}/tcp" comment "Continue Autocomplete API" 2>/dev/null
     ufw allow from 192.168.1.0/24 to any port 8765 proto tcp comment "inference diag HTTP" 2>/dev/null
     ufw --force enable 2>/dev/null
-    echo "    Firewall: ports 22, ${VLLM_PORT}, ${LLAMACPP_PORT}, 8765 (LAN) open"
+    echo "    Firewall: ports 22, ${AGENT_PORT}, ${AUTOCOMPLETE_PORT}, 8765 (LAN) open"
 fi
 
 # Install xpu-smi
@@ -1301,62 +1342,47 @@ echo "    Done."
 # -----------------------------------------------------------
 echo ""
 echo "================================================================"
-echo "Intel B70 Setup Complete!"
+echo "Intel B70 Coding Server Setup Complete!"
 echo "================================================================"
 echo ""
 echo "System:"
-echo "  User:     ${REAL_USER}"
-echo "  Kernel:   $(uname -r)${NEED_REBOOT:+ (NEW KERNEL INSTALLED — REBOOT REQUIRED)}"
-echo "  GPUs:     ${B70_COUNT}x Intel Arc Pro B70"
-echo "  Docker:   ${VLLM_DOCKER_IMAGE}"
-echo "  Model:    ${VLLM_MODEL} at ${MODEL_PATH}"
+echo "  User:         ${REAL_USER}"
+echo "  Kernel:       $(uname -r)${NEED_REBOOT:+ (NEW KERNEL INSTALLED — REBOOT REQUIRED)}"
+echo "  GPUs:         ${B70_COUNT}x Intel Arc Pro B70"
+echo "  Models Dir:   /mnt/models"
 echo ""
-echo "Scripts (vLLM):"
-echo "  ~/boot_vllm.sh        — Start everything (Docker container + vLLM server)"
-echo "  ~/start_vllm.sh       — Start vLLM inside existing container"
+echo "Models configured for VS Code Continue:"
+echo "  1. Agent (Chat/Edit/Plan):"
+echo "     Model:        Qwen3-Coder 30B-A3B-Instruct (Q4_K_M, ~18.8 GB)"
+echo "     Port:         ${AGENT_PORT}"
+echo "     Service:      llama-agent.service (SYCL0 / Card 0)"
+echo "     Start script: ~/start_agent.sh"
 echo ""
-echo "Scripts (llama.cpp SYCL tiers with B70 Xe2 optimizations):"
-echo "  ~/start_gemma.sh      — Port 8000: Gemma 4 26B Q8_0 on SYCL1 (card 1)"
-echo "  ~/start_coder.sh      — Port 8001: Qwen3-14B Q8_0 on SYCL3 (card 3)"
-echo "  ~/start_fast.sh       — Port 8002: Qwen3.5-9B Q4_K_M on SYCL2 (card 2)"
-echo "  ~/start_pentest.sh    — Port 8003: RedSage 8B on SYCL0 (card 0)"
-echo "  ~/start_llamacpp.sh   — Single-GPU Vulkan server fallback"
-echo "  ~/sysinfo.sh          — Show system status"
+echo "  2. Tab Autocomplete (Fast FIM):"
+echo "     Model:        Qwen2.5-Coder 1.5B (Q8_0, ~1.6 GB)"
+echo "     Port:         ${AUTOCOMPLETE_PORT}"
+echo "     Service:      llama-autocomplete.service (SYCL1 / Card 1)"
+echo "     Start script: ~/start_autocomplete.sh"
 echo ""
-echo "Auto-recovery (survives reboots and crashes):"
-echo "  vllm-docker.service   — Auto-starts container on boot"
-echo "  vllm-watchdog.service — Monitors and restarts vLLM if it crashes"
-echo "  gpu-thermal-watchdog  — Stops vLLM if GPU temp exceeds 90C"
+echo "Active services:"
+echo "  systemctl status llama-agent"
+echo "  systemctl status llama-autocomplete"
+echo "  systemctl status gpu-thermal-watchdog"
 echo ""
-echo "After boot:"
-echo "  API endpoint:  http://$(hostname -I | awk '{print $1}'):${VLLM_PORT}"
-echo "  Health check:  curl http://$(hostname -I | awk '{print $1}'):${VLLM_PORT}/health"
+echo "----------------------------------------------------------------"
+echo "VS Code Continue configuration (~/.continue/config.json):"
+echo "----------------------------------------------------------------"
+cat "${CONTINUE_DIR}/config.json.example" 2>/dev/null || true
 echo ""
-echo "Test:"
-echo "  curl http://$(hostname -I | awk '{print $1}'):${VLLM_PORT}/v1/chat/completions \\"
-echo "    -H 'Content-Type: application/json' \\"
-echo "    -d '{\"model\":\"${VLLM_MODEL_NAME}\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":100}'"
+echo "----------------------------------------------------------------"
 echo ""
 
 if [[ "${NEED_REBOOT}" == "true" ]]; then
     echo "================================================================"
     echo "  REBOOT REQUIRED for new kernel and GRUB parameters!"
     echo "  Run: sudo reboot"
-    echo "  Then: ~/boot_vllm.sh"
     echo "================================================================"
 fi
 
-echo ""
-echo "Performance targets (4x B70, Gemma 4 26B-A4B BF16, TP=4):"
-echo "  Single request:   ~25-35 tok/s (with 128GB RAM)"
-echo "  8 concurrent:     ~160-220 tok/s"
-echo "  128 concurrent:   ~480-540 tok/s (requires --max-num-seqs 128)"
-echo ""
-echo "Performance targets (4x B70, Gemma 4 26B-A4B BF16, TP=4, 16GB RAM + swap):"
-echo "  Single request:   ~5.7 tok/s (swap-bottlenecked)"
-echo "  8 concurrent:     ~37 tok/s"
-echo "  NOTE: Upgrade to 128GB DDR4-3200 for full performance"
-echo ""
-echo "GPU temps under load: 61-67C package, 62-68C VRAM (well within limits)"
 echo ""
 echo "Log saved to: ${LOG}"

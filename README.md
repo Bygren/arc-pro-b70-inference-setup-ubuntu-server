@@ -49,29 +49,25 @@ Automated setup script for running LLM inference on Intel Arc Pro B70 GPUs with 
 - Slow Mode switch on Zenith Extreme: **OFF** (causes PCIe link training failures)
 - Memory: **DOCP 2666** (or stock 2400) — do not enable 3200 XMP at full 4-DIMM population
 
-## Model Layout
+## Model Layout (VS Code Continue Edition)
 
-Four independent llama.cpp SYCL servers, one per B70 card, each pinned to its PCIe slot:
+Two dedicated llama.cpp SYCL servers tailored for developer workflows in VS Code with the Continue extension:
 
-| Port | Model | Quant | Device | PCIe Slot | Die |
-|------|-------|-------|--------|-----------|-----|
-| 8000 | Gemma 4 26B-A4B | Q8_0 | SYCL1 (BDF 10:00.0) | x16 | Die 0 |
-| 8001 | Qwen3-14B | Q8_0 | SYCL3 (BDF 44:00.0) | x16 | Die 1 |
-| 8002 | Qwen3.5-9B | Q4_K_M | SYCL2 (BDF 43:00.0) | x8 | Die 1 |
-| 8003 | RedSage-Qwen3-8B | Q4_K_M | Vulkan (card 1) | x8 | Die 0 |
+| Port | Role | Model | Quant | Device | VRAM | Context | Purpose |
+|------|------|-------|-------|--------|------|---------|---------|
+| **8000** | **Agent** | Qwen3-Coder 30B-A3B-Instruct | Q4_K_M | SYCL0 (Card 0) | ~18.8 GB | 32768 | Chat, inline code edits, repo-level agent reasoning |
+| **8001** | **Autocomplete** | Qwen2.5-Coder 1.5B | Q8_0 | SYCL1 (Card 1) | ~1.6 GB | 4096 | Low-latency FIM (Fill-in-the-Middle) tab-completion |
 
-Each server is fully independent — different models, contexts, and ports. No tensor parallelism, no shared state.
+> **Single-GPU note:** If your system has 1x B70 card (32GB VRAM), both models run simultaneously on `SYCL0` (~20.5 GB total VRAM), leaving plenty of room for KV cache. On multi-GPU configurations, the autocomplete engine runs on `SYCL1` so background typing never contends with agent code generation.
 
 ## Performance
 
-Benchmarks with 128GB RAM installed (no swap):
+Benchmarks on Intel Arc Pro B70 with Xe2 Battlemage optimizations:
 
-| Model | Port | Context | Parallel Slots | Est. tok/s |
-|-------|------|---------|---------------|-----------|
-| Gemma 4 26B-A4B Q8_0 | 8000 | 32768 | 2 | ~25-35 single |
-| Qwen3-14B Q8_0 | 8001 | 32768 | 2 | ~40-55 single |
-| Qwen3.5-9B Q4_K_M | 8002 | 32768 | 2 | ~60-80 single |
-| RedSage-Qwen3-8B Q4_K_M | 8003 | 8192 | 1 | ~50-70 single |
+| Model | Port | Latency / tok/s | Role |
+|-------|------|-----------------|------|
+| **Qwen3-Coder 30B-A3B-Instruct** (Q4_K_M) | 8000 | ~45–65 tok/s | Instantaneous agent tool-calls & coding |
+| **Qwen2.5-Coder 1.5B** (Q8_0) | 8001 | ~12–18 ms/tok (>60 tok/s) | Real-time tab autocomplete while typing |
 
 > **Note:** These are estimates pending full benchmarks with 128GB RAM. Prior vLLM numbers (5.7 tok/s
 > single, 37 tok/s @ 8 concurrent) were swap-bottlenecked on 16GB RAM — not representative of current
@@ -132,33 +128,59 @@ sudo ./odin-b70-setup.sh
 # Reboot (required for new kernel)
 sudo reboot
 
-# Start all four inference servers
-~/start_gemma.sh &
-~/start_coder.sh &
-~/start_fast.sh &
-~/start_pentest.sh &   # (or ~/start_redsage.sh)
+# Start Continue inference servers (or let systemd manage them)
+sudo systemctl status llama-agent         # Port 8000
+sudo systemctl status llama-autocomplete  # Port 8001
 
-# Test
+# Manual start (if running interactively):
+~/start_agent.sh &
+~/start_autocomplete.sh &
+
+# Test Agent endpoint
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gemma-4-26B-A4B","messages":[{"role":"user","content":"Hello"}],"max_tokens":100}'
+  -d '{"model":"qwen3-coder-30b","messages":[{"role":"user","content":"Write a python quicksort"}],"max_tokens":100}'
+
+# Test Autocomplete endpoint
+curl http://localhost:8001/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5-coder-1.5b","prompt":"def fibonacci(n):\n","max_tokens":50}'
+```
+
+## VS Code Continue Configuration
+
+In VS Code with the [Continue](https://continue.dev) extension, open `~/.continue/config.json` (or `config.yaml`) and configure:
+
+```json
+{
+  "models": [
+    {
+      "title": "Qwen3-Coder 30B-A3B (Agent)",
+      "provider": "openai",
+      "model": "qwen3-coder-30b",
+      "apiBase": "http://<SERVER_IP>:8000/v1",
+      "contextLength": 32768
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Qwen2.5-Coder 1.5B (Autocomplete)",
+    "provider": "openai",
+    "model": "qwen2.5-coder-1.5b",
+    "apiBase": "http://<SERVER_IP>:8001/v1"
+  }
+}
 ```
 
 ## What the Script Installs
 
 1. **Kernel 6.17+** — Required for the `xe` driver to recognize Battlemage GPUs
-2. **Intel compute-runtime v26.09** — From GitHub, not the APT repo (which is too old for B70)
-3. **Intel Graphics Compiler v2.30.1** — Matching IGC version
-4. **Intel oneAPI Base Toolkit** — DPC++ (`icx`/`icpx`), oneMKL, oneDNN, Level Zero
-5. **llama.cpp (SYCL backend, with 11 Xe2 patches)** — Native SYCL with Battlemage optimizations (MoE MMVQ, Xe2 warptiles, Q8_0 reorder fix)
-6. **llama.cpp (Vulkan backend, with Xe2/Xe3 detection)** — High performance fallback for RedSage and non-SYCL workloads
-7. **Gemma 4 26B-A4B Q8_0** — Default primary model; 32K context, 2 parallel slots
-8. **Qwen3-14B Q8_0** — Coding/reasoning model; `--reasoning off` for direct mode
-9. **Qwen3.5-9B Q4_K_M** — Fast general model; fits in 32GB with room to spare
-10. **RedSage-Qwen3-8B Q4_K_M** — Cybersecurity-specialized model (port 8003, Vulkan)
-11. **xpu-smi** — GPU monitoring (power, frequency, VRAM usage)
-12. **Systemd services** — Auto-starts all four servers on boot
-13. **Chat templates** — `.jinja` templates for models that require them (Gemma 4)
+2. **Intel compute-runtime & IGC** — Stable Intel GPU runtime stack
+3. **Intel oneAPI Base Toolkit** — DPC++ (`icx`/`icpx`), oneMKL, oneDNN, Level Zero
+4. **llama.cpp (SYCL backend, with 11 Xe2 patches)** — Native SYCL with Battlemage optimizations (MoE MMVQ, Xe2 warptiles, Q8_0 reorder fix)
+5. **Qwen3-Coder 30B-A3B-Instruct (Q4_K_M)** — High-capability coding model for Agent, Chat, and edit tasks (~18.8 GB VRAM)
+6. **Qwen2.5-Coder 1.5B (Q8_0)** — Ultra low-latency model for instant tab autocomplete (~1.6 GB VRAM)
+7. **Systemd services** — `llama-agent.service` and `llama-autocomplete.service` auto-started on boot
+8. **xpu-smi & GPU Thermal Watchdog** — Continuous temperature and health monitoring
 
 ## Architecture
 
@@ -166,37 +188,25 @@ curl http://localhost:8000/v1/chat/completions \
   ┌──────────────────────────────────────────────────────────┐
   │               Ubuntu 24.04 / 26.04 Host                  │
   │                                                          │
-  │  Port 8000           Port 8001           Port 8002       │
-  │  llama-server        llama-server        llama-server    │
-  │  Gemma 4 26B         Qwen3-14B           Qwen3.5-9B      │
-  │  Q8_0                Q8_0                Q4_K_M          │
-  │  ┌──────────┐        ┌──────────┐        ┌──────────┐    │
-  │  │  B70 #1  │        │  B70 #3  │        │  B70 #2  │    │
-  │  │  SYCL1   │        │  SYCL3   │        │  SYCL2   │    │
-  │  │  32GB    │        │  32GB    │        │  32GB    │    │
-  │  │  x16     │        │  x16     │        │  x8      │    │
-  │  └──────────┘        └──────────┘        └──────────┘    │
-  │                                                          │
-  │  Port 8003                                               │
-  │  llama-server                                            │
-  │  RedSage-8B Q4_K_M                                       │
-  │  ┌──────────┐                                            │
-  │  │  B70 #4  │                                            │
-  │  │  Vulkan  │                                            │
-  │  │  32GB    │                                            │
-  │  │  x8      │                                            │
-  │  └──────────┘                                            │
+  │  Port 8000                       Port 8001               │
+  │  llama-server (SYCL)             llama-server (SYCL)     │
+  │  Qwen3-Coder 30B-A3B (Q4_K_M)    Qwen2.5-Coder 1.5B (Q8) │
+  │  ┌──────────────────────┐        ┌─────────────────────┐ │
+  │  │  B70 Card 0 (SYCL0)  │        │ B70 Card 1 (SYCL1)  │ │
+  │  │  32GB VRAM           │        │ 32GB VRAM           │ │
+  │  │  PCIe x16            │        │ PCIe x16 (or x8)    │ │
+  │  └──────────────────────┘        └─────────────────────┘ │
   └──────────────────────────────────────────────────────────┘
-                          │
-              Ports 8000–8003 (OpenAI-compatible)
-                          │
-         ┌────────────────────────────────┐
-         │  ODIN Agents / Trading Bots    │
-         │  LAN Clients (192.168.1.x)     │
-         └────────────────────────────────┘
+                           │
+               Ports 8000 (Agent) & 8001 (Autocomplete)
+                           │
+          ┌────────────────────────────────┐
+          │  VS Code (Continue Extension)  │
+          │  Developer Workstation         │
+          └────────────────────────────────┘
 ```
 
-Each server exposes an OpenAI-compatible `/v1/chat/completions` endpoint. ODIN routes by model tier: primary (8000), coder (8001), fast (8002), security (8003).
+Both endpoints expose standard OpenAI-compatible `/v1/chat/completions` and `/v1/completions` endpoints.
 
 ## Key Technical Details
 
