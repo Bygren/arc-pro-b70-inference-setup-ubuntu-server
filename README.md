@@ -22,36 +22,28 @@ Automated setup script for running LLM inference on Intel Arc Pro B70 GPUs with 
 | **llama.cpp Engine** | Built-in (SYCL + Vulkan) | Pinned base with 11 Battlemage Xe2 cherry-picked patches from [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes) |
 | **Start Scripts & Systemd** | Included | Pre-configured `start_*.sh` and `llamacpp@.service` with optimal env vars (`GGML_SYCL_DISABLE_OPT=1`, etc.) |
 
-## Hardware
+## Hardware Specification
 
 | Component | Spec |
 |-----------|------|
-| **Motherboard** | ASUS ROG Zenith Extreme X399 |
-| **CPU** | AMD Threadripper 1900X (8c/16t) |
-| **RAM** | 128GB DDR4-3200 (4x32GB, quad-channel, installed 2026-04-10) |
-| **GPUs** | 4x Intel Arc Pro B70 (128GB VRAM total, 32GB each) |
-| **Boot Drive** | 256GB NVMe |
-| **Model Storage** | 4TB SSD |
-| **PSU** | EVGA SuperNOVA 1600 G+ |
-| **Case** | Phanteks Enthoo Pro |
-| **OS** | Ubuntu Server 24.04 LTS or 26.04 LTS, kernel 6.17+ |
+| **GPU** | 1x Intel Arc Pro B70 (32GB VRAM, Battlemage Xe2, PCIe 5.0/4.0 x16) |
+| **CPU** | AMD Ryzen 9 9900X (12c/24t, 4.4 GHz base / 5.6 GHz boost, 76MB cache) |
+| **Motherboard** | ASUS ROG Crosshair X870E Hero (PCIe 5.0) |
+| **RAM** | 64GB DDR5-6000MHz (Kingston Fury, dual-channel) |
+| **Boot & Storage** | 1TB WD Black SN7100 NVMe PCIe 4.0 |
+| **PSU** | Phanteks 1000W Platinum |
+| **Cooler** | be quiet! Pure Rock Pro 3 Black |
+| **Case** | Fractal Design North XL Svart |
+| **OS** | Ubuntu Server 26.04 LTS (or 24.04 LTS), kernel 6.17+ |
 
-> **RAM speed note:** The Threadripper 1900X memory controller officially supports DDR4-2400, with the X399
-> platform (Zenith Extreme) pushing up to DDR4-2666 reliably at full population (4 DIMMs, one per channel).
-> DDR4-3200 XMP/DOCP profiles typically fail to train at 4×32GB on 1st-gen Threadripper. Run at stock
-> (2666 MHz) or DOCP 2933 MHz — do not force 3200, it will cause random reboots under memory pressure.
-> Quad-channel DDR4-2666 still delivers ~70–75 GB/s real-world bandwidth, which is the target for
-> eliminating swap bottlenecks.
+> **Single-GPU Capacity:** A single Intel Arc Pro B70 card with 32GB VRAM easily hosts both the **Qwen3-Coder 30B-A3B Agent** (~18.8 GB) and **Qwen2.5-Coder 1.5B Autocomplete** (~1.6 GB) simultaneously on `SYCL0` (~20.4 GB combined), leaving over 11 GB of VRAM headroom for 32K context and KV-cache. Multi-GPU systems are also supported out-of-the-box (autocomplete automatically offloads to Card 1 / `SYCL1`).
 
-### BIOS Settings (required)
+### BIOS Settings (Required)
 - Above 4G Decoding: **ENABLED**
-- Resizable BAR: **ENABLED**
-- CSM: **DISABLED** (UEFI only)
-- IOMMU: **ENABLED**
-- SR-IOV: **ENABLED**
-- PCIE_X8/X4_4: **X8 Mode**
-- Slow Mode switch on Zenith Extreme: **OFF** (causes PCIe link training failures)
-- Memory: **DOCP 2666** (or stock 2400) — do not enable 3200 XMP at full 4-DIMM population
+- Resizable BAR (ReBAR): **ENABLED**
+- CSM (Compatibility Support Module): **DISABLED** (pure UEFI only)
+- Primary Display: **PEG / PCIe Slot** (prioritize Arc Pro B70 over Ryzen 9900X integrated graphics)
+- PCIe Link Speed: **Gen 4 / Gen 5**
 
 ## Model Layout (VS Code Continue Edition)
 
@@ -190,16 +182,19 @@ In VS Code with the [Continue](https://continue.dev) extension, open `~/.continu
 
 ```
   ┌──────────────────────────────────────────────────────────┐
-  │               Ubuntu 24.04 / 26.04 Host                  │
+  │               Ubuntu 26.04 / 24.04 Server                │
+  │            (AMD Ryzen 9 9900X + 64GB DDR5)               │
   │                                                          │
-  │  Port 8000                       Port 8001               │
+  │  Port 8000 (Agent / Chat)        Port 8001 (Autocomplete)│
   │  llama-server (SYCL)             llama-server (SYCL)     │
   │  Qwen3-Coder 30B-A3B (Q4_K_M)    Qwen2.5-Coder 1.5B (Q8) │
-  │  ┌──────────────────────┐        ┌─────────────────────┐ │
-  │  │  B70 Card 0 (SYCL0)  │        │ B70 Card 1 (SYCL1)  │ │
-  │  │  32GB VRAM           │        │ 32GB VRAM           │ │
-  │  │  PCIe x16            │        │ PCIe x16 (or x8)    │ │
-  │  └──────────────────────┘        └─────────────────────┘ │
+  │  ~18.8 GB VRAM                   ~1.6 GB VRAM            │
+  │  ┌─────────────────────────────────────────────────────┐ │
+  │  │         Intel Arc Pro B70 GPU (Device: SYCL0)       │ │
+  │  │         32GB VRAM — PCIe 5.0 / 4.0 x16              │ │
+  │  │         (~20.4 GB used / 11.6 GB free headroom)     │ │
+  │  └─────────────────────────────────────────────────────┘ │
+  │  *(Multi-GPU setups: Autocomplete offloads to SYCL1)     │
   └──────────────────────────────────────────────────────────┘
                            │
                Ports 8000 (Agent) & 8001 (Autocomplete)
