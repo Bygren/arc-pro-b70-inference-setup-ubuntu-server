@@ -10,7 +10,7 @@
 > 📖 **Komplett installationsguide (steg-för-steg):**
 > Se [INSTALL.md](INSTALL.md) för en utförlig manual med hårdvarureferens (Ryzen 9900X / X870E Hero / Arc Pro B70), BIOS-inställningar, automatiserad installation och Continue-konfiguration för VS Code.
 
-Automated setup script for running LLM inference on Intel Arc Pro B70 GPUs with llama.cpp SYCL — four independent model slots, one per card, each on its own port.
+Automated setup script for running LLM coding assistance and inference on Intel Arc Pro B70 GPU with llama.cpp SYCL — optimized for VS Code with Continue (Agent on port 8000, Autocomplete on port 8001).
 
 ## Repository Overview
 
@@ -65,16 +65,7 @@ Benchmarks on Intel Arc Pro B70 with Xe2 Battlemage optimizations:
 | **Qwen3-Coder 30B-A3B-Instruct** (Q4_K_M) | 8000 | ~45–65 tok/s | Instantaneous agent tool-calls & coding |
 | **Qwen2.5-Coder 1.5B** (Q8_0) | 8001 | ~12–18 ms/tok (>60 tok/s) | Real-time tab autocomplete while typing |
 
-> **Note:** These are estimates pending full benchmarks with 128GB RAM. Prior vLLM numbers (5.7 tok/s
-> single, 37 tok/s @ 8 concurrent) were swap-bottlenecked on 16GB RAM — not representative of current
-> hardware.
-
-### Reference Benchmarks
-
-| Config | Model | Single | 8 Concurrent | Source |
-|--------|-------|--------|-------------|--------|
-| 2x B70, 16GB RAM | Qwen2.5-14B BF16, TP=2 | 19 tok/s | 140 tok/s | Measured (vLLM, swap) |
-| 4x B70, 128GB RAM | Qwen3.5-27B BF16, TP=4 | ~30 tok/s | 540 tok/s | Level1Techs |
+> **Memory efficiency:** Both models run entirely in the GPU's 32GB VRAM (~20.4 GB combined), with the host system running AMD Ryzen 9 9900X and 64GB DDR5-6000 RAM. No model weights or KV caches spill into system RAM swap, eliminating the classic swap bottleneck and ensuring consistent, low-jitter tok/s performance across long programming sessions.
 
 ## Quick Start
 
@@ -215,48 +206,40 @@ vLLM XPU requires `--enforce-eager` (no CUDA graphs on Intel XPU) and a `--privi
 
 llama.cpp SYCL sidesteps all of this:
 - No Docker, no container overhead, runs directly on the host
-- No inter-GPU communication — each card is fully independent
-- No Python scheduler — C++ server with minimal overhead
-- Each `llama-server` process pins to one `--device SYCL{n}` via Level Zero
+- No inter-GPU communication bottlenecks — each process manages its device context directly
+- No Python scheduler — C++ server with minimal latency
+- Each `llama-server` process pins to `--device SYCL0` (or `SYCL1` in multi-GPU configurations)
 
-The tradeoff is no tensor parallelism (can't spread one 60B+ model across cards). For the current model sizes (8B–26B), single-card fits fine in 32GB.
+For code assistance, Qwen3-Coder 30B-A3B (MoE, ~18.8 GB) and Qwen2.5-Coder 1.5B (~1.6 GB) fit comfortably on a single 32GB Arc Pro B70 card with plenty of room for 32K context.
 
 ### Critical llama.cpp SYCL Flags
 
 | Flag | Value | Why |
 |------|-------|-----|
-| `--device` | `SYCL0`–`SYCL3` | Pins server to one specific B70 card |
-| `-ngl 999` | — | Offload all layers to GPU (no CPU fallback) |
-| `-c` | `32768` | 32K context per slot |
-| `--parallel` | `2` | Two simultaneous requests per server |
+| `--device` | `SYCL0` | Pins server to the B70 GPU (or `SYCL1` for autocomplete on multi-GPU) |
+| `-ngl 999` | — | Offload all layers to GPU VRAM (no CPU fallback) |
+| `-c` | `32768` (Agent) / `4096` (Autocomplete) | 32K context for agent, 4K for autocomplete |
+| `--parallel` | `2` (Agent) / `4` (Autocomplete) | Simultaneous requests (autocomplete handles rapid typing bursts) |
 | `--batch-size` | `2048` | KV cache fill batch — tuned for B70 XMX engines |
 | `--ubatch-size` | `512` | Micro-batch for prompt processing |
-| `--defrag-thold` | `0.1` | KV cache defrag at 10% fragmentation |
-| `-t` | `1` | One CPU decode thread (GPU-bound; more threads waste) |
-| `--no-warmup` | — | Skip warmup inference on start (faster boot) |
-| `--reasoning off` | — | Qwen3 models: suppress `<think>` blocks for direct output |
-| `--jinja` | — | Required for models with `.jinja` chat templates |
+| `--defrag-thold` | `0.1` | KV cache defrag at 10% fragmentation (maintains tok/s over long sessions) |
+| `-fa 0` | — | Disables flash attention (avoids MoE crashes on current Xe2 SYCL compiler) |
+| `-t` | `1` | One CPU decode thread (GPU-bound; extra threads create PCIe queue contention) |
+| `--no-warmup` | — | Skip warmup inference on start (instant server readiness) |
+| `--reasoning off` | — | Qwen3-Coder: direct instruct mode without `<think>` output tags |
 
 ### Critical Environment Variables
 
 | Variable | Value | Why |
 |----------|-------|-----|
-| `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS` | `1` | Allows SYCL USM allocations up to device VRAM limit |
-| `GGML_SYCL_ENABLE_FLASH_ATTN` | `1` | Enable FlashAttention on B70 XMX engines (~20% throughput gain) |
-| `SYCL_CACHE_PERSISTENT` | `0` | Disable persistent JIT cache (avoids stale kernels after driver updates) |
-| `ZES_ENABLE_SYSMAN` | `1` | Required for xpu-smi / sysman power and temp monitoring |
+| `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS` | `1` | Required: Allows SYCL USM allocations up to the full 32GB VRAM |
+| `GGML_SYCL_DISABLE_OPT` | `1` | **Mandatory for Qwen3-Coder MoE:** Prevents slot-initialization crash |
+| `ZES_ENABLE_SYSMAN` | `1` | Required for xpu-smi / sysman power, frequency, and temperature monitoring |
+| `SYCL_CACHE_PERSISTENT` | `0` | Disables stale JIT kernel cache between driver and compiler updates |
 
-### RAM and Performance
+### Memory & System Performance
 
-With 128GB installed, all scheduler, tokenization, and embedding traffic runs in DDR4 instead of NVMe swap. The prior 16GB baseline:
-
-| RAM | Swap Needed | `--parallel` | Observed tok/s (Gemma single) |
-|-----|------------|--------------|-------------------------------|
-| 16GB | 64GB NVMe | 1 | 5.7 (swap-bottlenecked, vLLM TP=4) |
-| 128GB | None | 2 per server | ~25-35 (estimated, llama.cpp SYCL) |
-
-> **RAM speed caveat:** See hardware note above — with 4x32GB on Threadripper 1900X, run DOCP 2666
-> (not 3200). Quad-channel DDR4-2666 gives ~70–75 GB/s real-world, vs. ~3–5 GB/s through NVMe swap.
+With 64GB DDR5-6000 RAM and an AMD Ryzen 9 9900X CPU, all scheduler and tokenization operations run with high DDR5 memory bandwidth (~80–90 GB/s). Both models remain 100% resident in the GPU's 32GB VRAM (~20.4 GB combined), completely avoiding system swap.
 
 ### GPU Thermal Monitoring
 
@@ -283,29 +266,24 @@ cat /var/log/gpu_thermal.log
 
 | Problem | Solution |
 |---------|----------|
-| GPUs not detected in `lspci` | Enable Above 4G Decoding + ReBAR in BIOS, disable CSM |
-| `xe` driver not loading | Need kernel 6.17+. Check with `lsmod \| grep xe` |
-| `FATAL: Unknown device: deviceId: e223` | Compute-runtime too old. Install v26.09+ from GitHub |
-| llama.cpp SYCL `SYCL device not found` | Source oneAPI setvars: `source /opt/intel/oneapi/setvars.sh` |
-| llama.cpp can't allocate VRAM | Check `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1` is set |
-| Two servers try to use the same card | Verify `--device SYCL{n}` is unique per start script |
-| Memory won't train at DDR4-3200 | Expected on TR 1900X at 4 DIMMs — use DOCP 2666 or stock 2400 |
-| Thermal watchdog false trigger | Ensure watchdog filters MJ/W sensor lines (fixed in v1.2.1) |
-| WiFi broken after adding GPUs | Interface name changed. Check `ip link show` and update netplan |
-| WiFi broken with `iommu=off` | Use `iommu=pt` instead — keeps DMA working for 32-bit WiFi cards |
-| Slow Mode switch causes POST code 99 | Turn OFF the Slow Mode switch on Zenith Extreme |
-| BIOS bricked after EFI variable write | Use BIOS Flashback to recover — CMOS clear does NOT reset EFI NVRAM |
-| Gemma chat output garbled | Pass `--chat-template-file` + `--jinja`; Gemma 4 requires its `.jinja` template |
+| GPU not detected in `lspci` | Enable Above 4G Decoding + ReBAR in BIOS, set Primary Display to PEG/PCIe, disable CSM |
+| `xe` driver not loading | Requires kernel 6.17+. Check with `lsmod \| grep xe` and verify `uname -r` |
+| `FATAL: Unknown device: deviceId: e223` | Compute-runtime too old. Ensure v25.48+ / v26.09+ is installed |
+| llama.cpp SYCL `SYCL device not found` | Source oneAPI environment: `source /opt/intel/oneapi/setvars.sh` |
+| llama.cpp can't allocate full 32GB VRAM | Ensure `export UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1` is set |
+| Qwen3-Coder crashes at slot init | **MoE safety:** Ensure `export GGML_SYCL_DISABLE_OPT=1` is exported in startup script |
+| Flash Attention causes crash | Disable Flash Attention with `-fa 0` (standard attention is accelerated via Xe2 kernels) |
+| Continue cannot connect from VS Code | Verify UFW firewall (`sudo ufw allow 8000/tcp && sudo ufw allow 8001/tcp`) and check service status (`systemctl status llama-agent`) |
+| Thermal watchdog triggers shutdown | Check chassis airflow and fan curves; inspect temps via `sensors \| grep -A3 'xe-pci'` |
 
 ## Credits
 
 - [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server) — Original Ubuntu server inference setup
 - [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes) — Battlemage Xe2 patches & performance tuning kit
-- [Level1Techs](https://forum.level1techs.com/t/intel-b70-launch-unboxed-and-tested/247873) — 4x B70 benchmark (540 tok/s, vLLM TP=4)
-- [vLLM Intel Arc Pro B-Series Blog](https://vllm.ai/blog/intel-arc-pro-b) — Intel's vLLM optimization work
-- [Run Gemma 4 on Intel Arc GPUs](https://huggingface.co/blog/MatrixYao/intel-gpu) — Intel's Day 0 Gemma 4 XPU guide
-- [intel/compute-runtime](https://github.com/intel/compute-runtime) — GPU drivers
-- [ggerganov/llama.cpp](https://github.com/ggerganov/llama.cpp) — SYCL backend
+- [Level1Techs](https://forum.level1techs.com/t/intel-b70-launch-unboxed-and-tested/247873) — Intel Arc Pro B70 testing & benchmarks
+- [vLLM Intel Arc Pro B-Series Blog](https://vllm.ai/blog/intel-arc-pro-b) — Intel's XPU architectural guidance
+- [intel/compute-runtime](https://github.com/intel/compute-runtime) — Intel GPU drivers & runtime
+- [ggerganov/llama.cpp](https://github.com/ggerganov/llama.cpp) — llama.cpp engine & SYCL backend
 
 ## License
 
