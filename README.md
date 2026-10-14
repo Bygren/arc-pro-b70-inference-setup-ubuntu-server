@@ -4,22 +4,19 @@
 >
 > **Note:** Maintained by [Bygren](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server), based on [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server). Adds Ubuntu 26.04 LTS compatibility, driver resilience, and script bugfixes.
 >
-> **After setup, apply the performance tuning kit** at
-> [arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes)
-> to get the 11 cherry-picks (MoE MMVQ, Xe2 warptile, Q8_0 reorder fix, etc.),
-> Mesa 26 PPA, backend-selection rules, and env vars (`GGML_SYCL_DISABLE_OPT=1`)
-> that actually make the cards fast. Without those, llama.cpp on B70 leaves 2–7×
-> on the floor and MoE models SEGV at slot init.
+> **Built-in Intel oneAPI & Xe2 Performance Patches:**
+> This edition integrates **Intel oneAPI Base Toolkit** (`icx`/`icpx`, DPC++, oneMKL, oneDNN) and automatically compiles **llama.cpp with native SYCL and Vulkan backends**. It incorporates the **11 Battlemage Xe2 cherry-picked patches** (MoE MMVQ, Xe2 warptile, Q8_0 reorder fix, etc.) directly into the build so you get maximum tok/s and MoE stability out of the box without needing manual secondary patch steps.
 
 Automated setup script for running LLM inference on Intel Arc Pro B70 GPUs with llama.cpp SYCL — four independent model slots, one per card, each on its own port.
 
-## The three-repo picture
+## Repository Overview
 
-| Repo | What it does | When you want it |
+| Component | Status | Details |
 |---|---|---|
-| **this repo** | Bare-metal Ubuntu installer: autoinstall ISO, BIOS guide, DDR4 tuning, GuC firmware 70.60.0, systemd + watchdog, first-boot service | Building a box from scratch. Start here. |
-| [arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes) | llama.cpp tuning kit: 11 cherry-picks, Mesa PPA, per-model start scripts, SYCL-vs-Vulkan rules, benchmark guardrails | After the box is up, to get production-grade tok/s and MoE stability |
-| [arc-pro-b70-inference-setup-windows](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-windows) | Windows (WSL2 + Docker) installer for vLLM XPU TP=4 | You're on Windows and want single-model vLLM tensor parallelism |
+| **OS Support** | Ubuntu Server 24.04 LTS & 26.04 LTS | Dynamic repository handling, kernel 6.17+ verification, automated Mesa detection |
+| **Intel oneAPI** | Built-in | Installs `intel-oneapi-compiler-dpcpp-cpp`, `intel-oneapi-mkl-devel`, `intel-oneapi-dnnl-devel` |
+| **llama.cpp Engine** | Built-in (SYCL + Vulkan) | Pinned base with 11 Battlemage Xe2 cherry-picked patches from Hal9000AIML |
+| **Start Scripts & Systemd** | Included | Pre-configured `start_*.sh` and `llamacpp@.service` with optimal env vars (`GGML_SYCL_DISABLE_OPT=1`, etc.) |
 
 ## Hardware
 
@@ -139,7 +136,7 @@ sudo reboot
 ~/start_gemma.sh &
 ~/start_coder.sh &
 ~/start_fast.sh &
-~/start_redsage.sh &
+~/start_pentest.sh &   # (or ~/start_redsage.sh)
 
 # Test
 curl http://localhost:8000/v1/chat/completions \
@@ -152,9 +149,9 @@ curl http://localhost:8000/v1/chat/completions \
 1. **Kernel 6.17+** — Required for the `xe` driver to recognize Battlemage GPUs
 2. **Intel compute-runtime v26.09** — From GitHub, not the APT repo (which is too old for B70)
 3. **Intel Graphics Compiler v2.30.1** — Matching IGC version
-4. **Intel oneAPI Base Toolkit** — SYCL runtime, Level Zero, oneMKL
-5. **llama.cpp (SYCL backend, built from source)** — OpenCL-free SYCL path; each card runs as an independent server
-6. **llama.cpp (Vulkan backend)** — For RedSage on the x8 slot (port 8003); also useful for GGUF fallback
+4. **Intel oneAPI Base Toolkit** — DPC++ (`icx`/`icpx`), oneMKL, oneDNN, Level Zero
+5. **llama.cpp (SYCL backend, with 11 Xe2 patches)** — Native SYCL with Battlemage optimizations (MoE MMVQ, Xe2 warptiles, Q8_0 reorder fix)
+6. **llama.cpp (Vulkan backend, with Xe2/Xe3 detection)** — High performance fallback for RedSage and non-SYCL workloads
 7. **Gemma 4 26B-A4B Q8_0** — Default primary model; 32K context, 2 parallel slots
 8. **Qwen3-14B Q8_0** — Coding/reasoning model; `--reasoning off` for direct mode
 9. **Qwen3.5-9B Q4_K_M** — Fast general model; fits in 32GB with room to spare

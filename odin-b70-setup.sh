@@ -2,7 +2,10 @@
 # =============================================================================
 # Intel B70 Inference Server — Automated Setup Script v1.2.0
 #
-# Sets up Intel Arc Pro B70 GPUs for LLM inference with vLLM tensor parallelism.
+# Sets up Intel Arc Pro B70 GPUs for LLM inference with:
+#   1. vLLM tensor parallelism (multi-GPU) inside Docker
+#   2. llama.cpp SYCL backend (Intel oneAPI DPC++/SYCL + 11 B70 Xe2 patches)
+#   3. llama.cpp Vulkan backend (optimized warptile + coopmat fallback)
 # Tested on Ubuntu Server 24.04 LTS and 26.04 LTS with 2x and 4x B70 configurations.
 #
 # Hardware requirements:
@@ -22,13 +25,14 @@
 #
 # After running, reboot and then:
 #   ~/boot_vllm.sh        # Start vLLM with tensor parallelism
-#   ~/start_llamacpp.sh   # Or start llama.cpp for single-GPU inference
+#   ~/start_gemma.sh      # Start llama.cpp SYCL tier on port 8000
+#   ~/start_llamacpp.sh   # Or start single-GPU Vulkan fallback
 #
 # Based on testing by Level1Techs (550 tok/s on 4x B70)
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_VERSION="1.5.0"
+SCRIPT_VERSION="1.6.0"
 LOG="/var/log/odin-b70-setup.log"
 
 # --- Configuration (edit these) ---
@@ -119,7 +123,7 @@ echo ">>> [1/11] System update & essentials"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    build-essential cmake git curl wget \
+    build-essential cmake ninja-build patch git curl wget \
     htop lm-sensors \
     pkg-config libssl-dev \
     software-properties-common \
@@ -320,6 +324,46 @@ usermod -aG video "${REAL_USER}" 2>/dev/null || true
 echo "    Done."
 
 # -----------------------------------------------------------
+# 3b. Intel oneAPI Base Toolkit (DPC++/SYCL, oneMKL, oneDNN)
+# -----------------------------------------------------------
+echo ""
+echo ">>> [3b/11] Intel oneAPI Base Toolkit for SYCL"
+
+# Configure Intel oneAPI repository (all main works on Ubuntu 24.04 and 26.04)
+mkdir -p /etc/apt/keyrings
+wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
+    gpg --dearmor -o /etc/apt/keyrings/oneapi-archive-keyring.gpg 2>/dev/null
+
+echo "deb [signed-by=/etc/apt/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+    > /etc/apt/sources.list.d/oneAPI.list
+apt-get update -qq
+
+echo "    Installing oneAPI SYCL compiler (icx/icpx), oneMKL, and oneDNN..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    intel-oneapi-compiler-dpcpp-cpp \
+    intel-oneapi-mkl-devel \
+    intel-oneapi-dnnl-devel \
+    ninja-build
+
+# Mesa check: On Ubuntu 24.04 with older Mesa, upgrade via kisak-mesa PPA for Vulkan BF16
+# On Ubuntu 26.04, Mesa 25.3+/26.x is already native and kisak-mesa is not needed.
+MESA_VER=$(dpkg-query -W -f='${Version}' mesa-vulkan-drivers 2>/dev/null || echo 0)
+if [[ "${OS_VERSION}" =~ ^24 ]] && ! [[ "$MESA_VER" =~ ^(26|27|28) ]]; then
+    echo "    Ubuntu 24.04 detected with Mesa < 26 ($MESA_VER) — adding kisak-mesa PPA for Vulkan BF16..."
+    add-apt-repository -y ppa:kisak/kisak-mesa >/dev/null 2>&1 || true
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mesa-vulkan-drivers libvulkan1 vulkan-tools 2>/dev/null || true
+else
+    echo "    Mesa drivers version: $MESA_VER (OK)"
+fi
+
+if [[ -f /opt/intel/oneapi/setvars.sh ]]; then
+    echo "    Intel oneAPI installed successfully (/opt/intel/oneapi)"
+else
+    echo "    WARNING: /opt/intel/oneapi/setvars.sh not found after install"
+fi
+
+# -----------------------------------------------------------
 # 4. Docker
 # -----------------------------------------------------------
 echo ""
@@ -378,24 +422,82 @@ rm -rf "$VLLM_BUILD_DIR"
 echo "    Done."
 
 # -----------------------------------------------------------
-# 6. Build llama.cpp (Vulkan, single-GPU fallback)
+# 6. Build llama.cpp (SYCL and Vulkan with B70 Xe2 patches)
 # -----------------------------------------------------------
 echo ""
-echo ">>> [6/11] Building llama.cpp (Vulkan backend)"
+echo ">>> [6/11] Building llama.cpp (SYCL + Vulkan with Battlemage Xe2 patches)"
 
-LLAMA_DIR="${REAL_HOME}/llama.cpp"
-if [[ -d "${LLAMA_DIR}" ]]; then
-    sudo -u "${REAL_USER}" git -C "${LLAMA_DIR}" pull -q
-else
-    sudo -u "${REAL_USER}" git clone -q https://github.com/ggerganov/llama.cpp.git "${LLAMA_DIR}"
+LLAMA_BASE_SHA="073bb2c20b5b2c919469653214aaa1a9895816a2"
+LLAMA_ROOT="/opt/llama.cpp"
+LLAMA_SRC="${LLAMA_ROOT}/llama-sycl-src"
+PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches"
+
+mkdir -p "$LLAMA_ROOT"
+chown -R "${REAL_USER}:${REAL_USER}" "$LLAMA_ROOT"
+
+if [[ ! -d "$LLAMA_SRC" ]]; then
+    echo "    Cloning llama.cpp ($LLAMA_BASE_SHA)..."
+    sudo -u "${REAL_USER}" git clone https://github.com/ggml-org/llama.cpp "$LLAMA_SRC"
 fi
 
-rm -rf "${LLAMA_DIR}/build"
-sudo -u "${REAL_USER}" cmake -S "${LLAMA_DIR}" -B "${LLAMA_DIR}/build" \
-    -DGGML_VULKAN=ON -DGGML_SYCL=OFF -DGGML_CUDA=OFF \
-    -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON 2>&1 | tail -1
-sudo -u "${REAL_USER}" cmake --build "${LLAMA_DIR}/build" --config Release -j$(nproc) 2>&1 | tail -1
-echo "    Built: ${LLAMA_DIR}/build/bin/llama-server"
+cd "$LLAMA_SRC"
+sudo -u "${REAL_USER}" git fetch origin
+sudo -u "${REAL_USER}" git checkout "$LLAMA_BASE_SHA"
+sudo -u "${REAL_USER}" git branch -D b70-kit 2>/dev/null || true
+sudo -u "${REAL_USER}" git checkout -b b70-kit
+
+# Apply B70 Xe2 performance patches (11 cherry-picks from speedup-bugfixes)
+if [[ -d "$PATCH_DIR" ]] && [[ $(find "$PATCH_DIR" -name "*.patch" 2>/dev/null | wc -l) -gt 0 ]]; then
+    echo "    Applying B70 Battlemage Xe2 patches from patches/..."
+    sudo -u "${REAL_USER}" git am --3way "$PATCH_DIR"/*.patch 2>&1 | tee -a "$LOG" || {
+        echo "    Notice: git am encountered conflicts, falling back to patch utility..."
+        sudo -u "${REAL_USER}" git am --abort 2>/dev/null || true
+        for p in "$PATCH_DIR"/*.patch; do
+            sudo -u "${REAL_USER}" patch -p1 -N -s < "$p" 2>/dev/null || true
+        done
+    }
+fi
+
+# 6a. Build SYCL backend if oneAPI is installed
+LLAMA_SYCL_BUILD="${LLAMA_ROOT}/llama-sycl-build"
+if [[ -f /opt/intel/oneapi/setvars.sh ]]; then
+    echo "    Building llama.cpp SYCL backend (target: Intel Xe2/BMG, icx/icpx)..."
+    rm -rf "$LLAMA_SYCL_BUILD"
+    sudo -u "${REAL_USER}" -E bash -c "
+        set -e
+        source /opt/intel/oneapi/setvars.sh --force
+        cmake -B '$LLAMA_SYCL_BUILD' -S '$LLAMA_SRC' -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_SYCL=ON \
+            -DGGML_SYCL_TARGET=INTEL \
+            -DGGML_SYCL_F16=ON \
+            -DGGML_SYCL_DNN=ON \
+            -DGGML_SYCL_GRAPH=ON \
+            -DGGML_SYCL_HOST_MEM_FALLBACK=ON \
+            -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx
+        cmake --build '$LLAMA_SYCL_BUILD' -j\$(nproc)
+    " 2>&1 | tee -a "$LOG"
+    echo "    Built SYCL server: ${LLAMA_SYCL_BUILD}/bin/llama-server"
+else
+    echo "    WARNING: /opt/intel/oneapi/setvars.sh not found, skipping SYCL build."
+fi
+
+# 6b. Build Vulkan backend (with Xe2 warptile & coopmat optimizations)
+echo "    Building llama.cpp Vulkan backend..."
+LLAMA_VK_BUILD="${LLAMA_ROOT}/llama-vulkan-build"
+rm -rf "$LLAMA_VK_BUILD"
+sudo -u "${REAL_USER}" cmake -B "$LLAMA_VK_BUILD" -S "$LLAMA_SRC" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DGGML_VULKAN=ON \
+    -DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=ON \
+    -DGGML_SYCL=OFF 2>&1 | tee -a "$LOG"
+sudo -u "${REAL_USER}" cmake --build "$LLAMA_VK_BUILD" -j$(nproc) 2>&1 | tee -a "$LOG"
+echo "    Built Vulkan server: ${LLAMA_VK_BUILD}/bin/llama-server"
+
+# Compatibility symlink in user home for start_llamacpp.sh
+mkdir -p "${REAL_HOME}/llama.cpp/build/bin"
+chown -R "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/llama.cpp"
+ln -sf "${LLAMA_VK_BUILD}/bin/llama-server" "${REAL_HOME}/llama.cpp/build/bin/llama-server"
 
 # -----------------------------------------------------------
 # 7. Download default model
@@ -982,6 +1084,36 @@ Unit=gpu-diag-timer.service
 WantedBy=timers.target
 EOF
 
+# Stage SYCL/Vulkan tier start scripts in user home
+SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for s in start_gemma.sh start_coder.sh start_fast.sh start_pentest.sh; do
+    if [[ -f "${SETUP_DIR}/${s}" ]]; then
+        install -m 0755 "${SETUP_DIR}/${s}" "${REAL_HOME}/${s}"
+        chown "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/${s}"
+    fi
+done
+if [[ -f "${REAL_HOME}/start_pentest.sh" ]]; then
+    ln -sf "${REAL_HOME}/start_pentest.sh" "${REAL_HOME}/start_redsage.sh"
+    chown -h "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/start_redsage.sh"
+fi
+
+# Ensure model directory /mnt/models exists
+mkdir -p /mnt/models
+chown -R "${REAL_USER}:${REAL_USER}" /mnt/models
+
+# Install llama.cpp systemd units
+if [[ -f "${SETUP_DIR}/systemd/llamacpp@.service" ]]; then
+    install -m 0644 "${SETUP_DIR}/systemd/llamacpp@.service" /etc/systemd/system/llamacpp@.service
+fi
+
+for svc in llama-gemma.service llama-coder.service llama-fast.service; do
+    if [[ -f "${SETUP_DIR}/systemd/${svc}" ]]; then
+        sed -e "s|User=.*|User=${REAL_USER}|g" \
+            -e "s|/home/[^/]*/start_|${REAL_HOME}/start_|g" \
+            "${SETUP_DIR}/systemd/${svc}" > "/etc/systemd/system/${svc}"
+    fi
+done
+
 systemctl daemon-reload
 systemctl enable vllm-docker.service
 systemctl enable vllm-serve.service
@@ -1179,10 +1311,16 @@ echo "  GPUs:     ${B70_COUNT}x Intel Arc Pro B70"
 echo "  Docker:   ${VLLM_DOCKER_IMAGE}"
 echo "  Model:    ${VLLM_MODEL} at ${MODEL_PATH}"
 echo ""
-echo "Scripts:"
-echo "  ~/boot_vllm.sh        — Start everything (container + vLLM server)"
+echo "Scripts (vLLM):"
+echo "  ~/boot_vllm.sh        — Start everything (Docker container + vLLM server)"
 echo "  ~/start_vllm.sh       — Start vLLM inside existing container"
-echo "  ~/start_llamacpp.sh   — Start llama.cpp Vulkan (single-GPU fallback)"
+echo ""
+echo "Scripts (llama.cpp SYCL tiers with B70 Xe2 optimizations):"
+echo "  ~/start_gemma.sh      — Port 8000: Gemma 4 26B Q8_0 on SYCL1 (card 1)"
+echo "  ~/start_coder.sh      — Port 8001: Qwen3-14B Q8_0 on SYCL3 (card 3)"
+echo "  ~/start_fast.sh       — Port 8002: Qwen3.5-9B Q4_K_M on SYCL2 (card 2)"
+echo "  ~/start_pentest.sh    — Port 8003: RedSage 8B on SYCL0 (card 0)"
+echo "  ~/start_llamacpp.sh   — Single-GPU Vulkan server fallback"
 echo "  ~/sysinfo.sh          — Show system status"
 echo ""
 echo "Auto-recovery (survives reboots and crashes):"
