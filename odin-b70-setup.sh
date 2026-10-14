@@ -374,13 +374,33 @@ fi
 echo ""
 echo ">>> [4/11] Docker"
 
+mkdir -p /etc/docker
+DOCKER_CONFIG_UPDATED=false
+if [[ ! -f /etc/docker/daemon.json ]]; then
+    cat > /etc/docker/daemon.json << 'DOCKERCONF'
+{
+  "default-address-pools": [
+    {
+      "base": "172.30.0.0/16",
+      "size": 24
+    }
+  ]
+}
+DOCKERCONF
+    echo "    Configured /etc/docker/daemon.json (address pool 172.30.0.0/16)"
+    DOCKER_CONFIG_UPDATED=true
+fi
+
 if ! command -v docker &>/dev/null; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io
     systemctl enable docker
-    systemctl start docker
+    systemctl restart docker
     echo "    Installed Docker $(docker --version | awk '{print $3}')"
 else
     echo "    Docker already installed: $(docker --version | awk '{print $3}')"
+    if [[ "${DOCKER_CONFIG_UPDATED}" == "true" ]]; then
+        systemctl restart docker 2>/dev/null || true
+    fi
 fi
 
 usermod -aG docker "${REAL_USER}" 2>/dev/null || true

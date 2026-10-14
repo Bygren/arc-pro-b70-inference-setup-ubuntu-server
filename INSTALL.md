@@ -86,12 +86,13 @@ sudo ./odin-b70-setup.sh
 1. **Linux-kärna 6.17+ & Drivrutiner:** Installerar Intel Xe KMD-drivrutin, firmware och Intel compute-runtime.
 2. **Intel oneAPI Base Toolkit:** Installerar Intels officiella DPC++-kompilator (`icx`/`icpx`), oneMKL och oneDNN.
 3. **Mesa-detektering för Ubuntu 26.04:** Använder Ubuntu 26.04:s inbyggda moderna Mesa-stack (och undviker instabila externa PPA-arkiv).
-4. **llama.cpp med 11 Xe2-prestandapatchar:** Kompilerar `llama-server` med native SYCL-acceleration för Battlemage (MoE MMVQ kernels, Xe2 warptiles, minnesfixar).
-5. **Modellnedladdning:** Hämtar automatiskt:
+4. **Docker & Nätverkskonfiguration:** Installerar Docker och konfigurerar automatiskt `/etc/docker/daemon.json` med adresspool `172.30.0.0/16` (subnät `size: 24`) för att undvika IP- och routingkrockar med det lokala nätverket.
+5. **llama.cpp med 11 Xe2-prestandapatchar:** Kompilerar `llama-server` med native SYCL-acceleration för Battlemage (MoE MMVQ kernels, Xe2 warptiles, minnesfixar).
+6. **Modellnedladdning:** Hämtar automatiskt:
    * `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` till `/mnt/models`
    * `qwen2.5-coder-1.5b-instruct-q8_0.gguf` till `/mnt/models`
-6. **Systemd-tjänster:** Skapar och aktiverar automatiskt `llama-agent.service` (port 8000) och `llama-autocomplete.service` (port 8001).
-7. **Brandvägg:** Öppnar portarna 22 (SSH), 8000 (Agent), 8001 (Autocomplete) och 8765 (Inference Diagnostic HTTP) i UFW.
+7. **Systemd-tjänster:** Skapar och aktiverar automatiskt `llama-agent.service` (port 8000) och `llama-autocomplete.service` (port 8001).
+8. **Brandvägg:** Öppnar portarna 22 (SSH), 8000 (Agent), 8001 (Autocomplete) och 8765 (Inference Diagnostic HTTP) i UFW.
 
 ---
 
