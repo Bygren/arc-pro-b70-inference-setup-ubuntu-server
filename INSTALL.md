@@ -221,3 +221,93 @@ sudo systemctl stop llama-agent llama-autocomplete
 * `--defrag-thold 0.1`: Defragmenterar automatiskt KV-cachen när fragmenteringen överstiger 10 %, vilket håller tok/s stabil över långa kodsessioner.
 * `-t 1`: Använder 1 CPU-avlastningstråd. Fler CPU-trådar skapar kö-kollisioner på PCIe/Xe2-arkitekturen och sänker prestandan.
 * `--device SYCL0`: Binder processen till specifik Intel Arc Pro-GPU.
+
+---
+
+## Hur du byter eller uppgraderar en modell
+
+Att byta ut en modell görs i tre snabba steg utan att du behöver installera om eller bygga om AI-motorn. 
+
+Här är ett konkret exempel där vi byter ut Agent-modellen från **Qwen3-Coder 30B-A3B** till **Devstral Small 2 24B Instruct 2512** (utvecklad av Mistral AI & All Hands AI, ca 14.5 GB VRAM i Q4_K_M-format).
+
+### Steg 1: Ladda ner den nya modellen till `/mnt/models`
+
+Kör följande Python-kommando på servern för att hämta GGUF-filen via `huggingface_hub`:
+
+```bash
+python3 - << 'EOF'
+from huggingface_hub import hf_hub_download
+
+repo = "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF"
+filename = "Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf"
+dest = "/mnt/models"
+
+print(f"Laddar ner {filename} från {repo}...")
+hf_hub_download(repo_id=repo, filename=filename, local_dir=dest)
+print("Nedladdning klar!")
+EOF
+```
+
+### Steg 2: Uppdatera startskriptet (`~/start_agent.sh`)
+
+Öppna startskriptet för agenten i en textredigerare:
+
+```bash
+nano ~/start_agent.sh
+```
+
+Ändra följande rader:
+1. Peka på den nya modellfilen:
+   ```bash
+   MODEL_FILE="/mnt/models/Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf"
+   ```
+2. Ändra modellens alias:
+   ```bash
+   --alias devstral-small-24b
+   ```
+
+Spara filen (`Ctrl+O`, tryck `Enter`) och stäng nano (`Ctrl+X`).
+
+Starta sedan om agent-tjänsten så att den laddar den nya modellen:
+
+```bash
+sudo systemctl restart llama-agent
+```
+
+Verifiera att den nya modellen körs och svarar:
+
+```bash
+sudo systemctl status llama-agent
+
+# Testa anrop mot nya modellen
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"devstral-small-24b","messages":[{"role":"user","content":"Hej Devstral!"}],"max_tokens":30}'
+```
+
+### Steg 3: Uppdatera Continue i VS Code
+
+Öppna Continues inställningar i VS Code (`~/.continue/config.json`) och uppdatera `model` och `title`:
+
+```json
+{
+  "models": [
+    {
+      "title": "Devstral Small 2 24B (Agent)",
+      "provider": "openai",
+      "model": "devstral-small-24b",
+      "apiBase": "http://<SERVER-IP>:8000/v1",
+      "contextLength": 32768
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Qwen2.5 Coder 1.5B (Autocomplete)",
+    "provider": "openai",
+    "model": "qwen2.5-coder-1.5b",
+    "apiBase": "http://<SERVER-IP>:8001/v1"
+  }
+}
+```
+
+Klart! Nu använder Continue din nya Devstral Small 2 24B-modell för agentkodning, chat och redigering, medan Qwen2.5-Coder 1.5B fortsätter att sköta autocomplete i bakgrunden.
+
