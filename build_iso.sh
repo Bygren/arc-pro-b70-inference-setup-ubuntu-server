@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # build_iso.sh — Build a bootable Ubuntu 24.04 / 26.04 Server autoinstall USB image
 # that lays down Ubuntu, then runs odin-b70-setup.sh on first boot to bring up
-# the full vLLM + 4x Intel Arc Pro B70 stack.
+# the full Intel Arc Pro B70 AI coding stack (llama.cpp SYCL + Continue).
 #
 # Run this in WSL or any Linux box with: xorriso, 7z, wget, sed, mksquashfs.
 # Output: arc-pro-b70-autoinstall.iso  (write to USB with Rufus / Balena / dd)
