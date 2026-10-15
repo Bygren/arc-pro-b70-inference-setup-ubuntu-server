@@ -386,6 +386,7 @@ DOCKER_CONFIG_UPDATED=false
 if [[ ! -f /etc/docker/daemon.json ]]; then
     cat > /etc/docker/daemon.json << 'DOCKERCONF'
 {
+  "bip": "172.30.0.1/24",
   "default-address-pools": [
     {
       "base": "172.30.0.0/16",
@@ -394,7 +395,7 @@ if [[ ! -f /etc/docker/daemon.json ]]; then
   ]
 }
 DOCKERCONF
-    echo "    Configured /etc/docker/daemon.json (address pool 172.30.0.0/16)"
+    echo "    Configured /etc/docker/daemon.json (bip: 172.30.0.1/24, address pool 172.30.0.0/16)"
     DOCKER_CONFIG_UPDATED=true
 fi
 

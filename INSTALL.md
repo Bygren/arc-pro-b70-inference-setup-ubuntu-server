@@ -91,7 +91,7 @@ sudo ./odin-b70-setup.sh
 1. **Linux-kärna 6.17+ & Drivrutiner:** Installerar Intel Xe KMD-drivrutin, firmware och Intel compute-runtime.
 2. **Intel oneAPI Base Toolkit:** Installerar Intels officiella DPC++-kompilator (`icx`/`icpx`), oneMKL och oneDNN.
 3. **Mesa-detektering för Ubuntu 26.04:** Använder Ubuntu 26.04:s inbyggda moderna Mesa-stack (och undviker instabila externa PPA-arkiv).
-4. **Docker & Nätverkskonfiguration:** Installerar Docker och konfigurerar automatiskt `/etc/docker/daemon.json` med adresspool `172.30.0.0/16` (subnät `size: 24`) för att undvika IP- och routingkrockar med det lokala nätverket.
+4. **Docker & Nätverkskonfiguration:** Installerar Docker och konfigurerar automatiskt `/etc/docker/daemon.json` med `bip: 172.30.0.1/24` och adresspool `172.30.0.0/16` så att Dockers standardbrygga (`docker0`) flyttas bort från ditt LAN-subnät (`172.17.0.0/16`).
 5. **llama.cpp med 11 Xe2-prestandapatchar:** Kompilerar `llama-server` med native SYCL-acceleration för Battlemage (MoE MMVQ kernels, Xe2 warptiles, minnesfixar).
 6. **Modellnedladdning:** Hämtar automatiskt:
    * `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` till `/mnt/models`
