@@ -374,6 +374,13 @@ fi
 echo ""
 echo ">>> [4/11] Docker"
 
+# If Docker is installed via Snap, remove it. Snap sandboxing blocks direct GPU
+# access (/dev/dri) and ignores /etc/docker/daemon.json address pools.
+if command -v snap &>/dev/null && snap list docker &>/dev/null; then
+    echo "    Notice: Docker is installed via Snap. Removing Snap package to use native apt..."
+    snap remove --purge docker 2>/dev/null || true
+fi
+
 mkdir -p /etc/docker
 DOCKER_CONFIG_UPDATED=false
 if [[ ! -f /etc/docker/daemon.json ]]; then

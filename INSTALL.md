@@ -62,6 +62,11 @@ sudo systemctl daemon-reload
 # Rensa eventuella Nvidia-drivrutiner
 sudo apt remove --purge '^nvidia-.*' -y 2>/dev/null || true
 sudo apt autoremove -y
+
+# Rensa Snap-versionen av Docker om den finns (Snap blockerar GPU och ignorerar daemon.json)
+if command -v snap &>/dev/null && snap list docker &>/dev/null; then
+    sudo snap remove --purge docker
+fi
 ```
 
 ---
