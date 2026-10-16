@@ -62,8 +62,21 @@ Empirical benchmarks measured on reference hardware (AMD Ryzen 9 9900X + Intel A
 
 | Model | Port | Generation Speed | Prompt Processing | Generation Latency | Role |
 |---|---|---|---|---|---|
-| **Qwen3-Coder 30B-A3B-Instruct** (Q4_K_M) | 8000 | **~75 tok/s** | **100–130 tok/s** | ~13.3 ms/tok | Instantaneous agent tool-calls & coding |
-| **Qwen2.5-Coder 1.5B** (Q8_0) | 8001 | **~73 tok/s** | **~103 tok/s** | ~13.6 ms/tok | Real-time tab autocomplete while typing |
+| **Qwen3-Coder 30B-A3B-Instruct** (Q4_K_M) | 8000 | **~75 tok/s** | **130–155 tok/s** | ~13.4 ms/tok | Instantaneous agent tool-calls & coding |
+| **Qwen2.5-Coder 1.5B** (Q8_0) | 8001 | **~73 tok/s** | **>800 tok/s** | ~13.7 ms/tok | Real-time tab autocomplete while typing |
+
+### Verified Live Endpoint Timings
+
+Both models running concurrently in the card's 32GB VRAM (~20.4 GB combined allocation):
+
+* **Agent (`Qwen3-Coder 30B-A3B`, port 8000):**
+  * **Prompt Processing:** `154.14 tok/s` (35 tokens processed in 227 ms)
+  * **Generation Speed:** `74.56 tok/s` (120 code tokens generated in 1,609 ms)
+  * **Latency:** `13.41 ms / token`
+* **Tab Autocomplete (`Qwen2.5-Coder 1.5B`, port 8001):**
+  * **Prompt Processing:** `813.85 tok/s` (15 surrounding tokens ingested in just 18.4 ms — instantaneous FIM context awareness)
+  * **Generation Speed:** `72.97 tok/s` (60 completion tokens generated in 822 ms)
+  * **Latency:** `13.70 ms / token`
 
 > **Memory efficiency:** Both models run entirely in the GPU's 32GB VRAM (~20.4 GB combined), with the host system running AMD Ryzen 9 9900X and 64GB DDR5-6000 RAM. No model weights or KV caches spill into system RAM swap, eliminating the classic swap bottleneck and ensuring consistent, low-jitter tok/s performance across long programming sessions.
 
