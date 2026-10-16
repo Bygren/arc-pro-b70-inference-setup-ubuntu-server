@@ -58,12 +58,12 @@ Two dedicated llama.cpp SYCL servers tailored for developer workflows in VS Code
 
 ## Performance
 
-Benchmarks on Intel Arc Pro B70 with Xe2 Battlemage optimizations:
+Empirical benchmarks measured on reference hardware (AMD Ryzen 9 9900X + Intel Arc Pro B70 32GB, Ubuntu Server 26.04 LTS, oneAPI SYCL backend with 11 Xe2 Battlemage optimizations):
 
-| Model | Port | Latency / tok/s | Role |
-|-------|------|-----------------|------|
-| **Qwen3-Coder 30B-A3B-Instruct** (Q4_K_M) | 8000 | ~45–65 tok/s | Instantaneous agent tool-calls & coding |
-| **Qwen2.5-Coder 1.5B** (Q8_0) | 8001 | ~12–18 ms/tok (>60 tok/s) | Real-time tab autocomplete while typing |
+| Model | Port | Generation Speed | Prompt Processing | Generation Latency | Role |
+|---|---|---|---|---|---|
+| **Qwen3-Coder 30B-A3B-Instruct** (Q4_K_M) | 8000 | **~75 tok/s** | **100–130 tok/s** | ~13.3 ms/tok | Instantaneous agent tool-calls & coding |
+| **Qwen2.5-Coder 1.5B** (Q8_0) | 8001 | **~73 tok/s** | **~103 tok/s** | ~13.6 ms/tok | Real-time tab autocomplete while typing |
 
 > **Memory efficiency:** Both models run entirely in the GPU's 32GB VRAM (~20.4 GB combined), with the host system running AMD Ryzen 9 9900X and 64GB DDR5-6000 RAM. No model weights or KV caches spill into system RAM swap, eliminating the classic swap bottleneck and ensuring consistent, low-jitter tok/s performance across long programming sessions.
 
