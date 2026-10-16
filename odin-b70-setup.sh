@@ -1268,6 +1268,10 @@ systemctl enable gpu-thermal-watchdog.service
 systemctl enable gpu-diag-boot.service
 systemctl enable gpu-diag-timer.timer
 
+echo "    Starting AI services immediately..."
+systemctl restart llama-agent.service 2>/dev/null || true
+systemctl restart llama-autocomplete.service 2>/dev/null || true
+
 # -----------------------------------------------------------
 # 8b. BMG/vLLM post-install patches (bake into container image)
 # -----------------------------------------------------------
