@@ -102,26 +102,23 @@ sudo dd if=arc-pro-b70-autoinstall.iso of=/dev/sdX bs=4M status=progress oflag=s
 
 The first-boot service is idempotent — it touches `/var/lib/prob70/installed` on success and won't re-run on subsequent boots. Total time from USB boot to working inference endpoints: ~30-60 minutes (llama.cpp SYCL build is faster than the old vLLM source build).
 
-### Option B — Manual install on existing Ubuntu
+### Option B — Manual install on existing Ubuntu (24.04 / 26.04)
 
 ```bash
-# Download
-wget https://raw.githubusercontent.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server/master/odin-b70-setup.sh
+# Clone the repository
+git clone https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server.git
+cd arc-pro-b70-inference-setup-ubuntu-server
 chmod +x odin-b70-setup.sh
 
-# Run (takes 20-40 minutes — builds llama.cpp with SYCL backend)
+# Run setup (takes 20-30 minutes — sets up drivers, oneAPI, compiles llama.cpp SYCL, downloads models)
 sudo ./odin-b70-setup.sh
 
-# Reboot (required for new kernel)
+# Reboot (recommended for new kernel and firmware to take effect)
 sudo reboot
 
-# Start Continue inference servers (or let systemd manage them)
+# Verify services (auto-started on boot)
 sudo systemctl status llama-agent         # Port 8000
 sudo systemctl status llama-autocomplete  # Port 8001
-
-# Manual start (if running interactively):
-~/start_agent.sh &
-~/start_autocomplete.sh &
 
 # Test Agent endpoint
 curl http://localhost:8000/v1/chat/completions \
@@ -136,7 +133,36 @@ curl http://localhost:8001/v1/completions \
 
 ## VS Code Continue Configuration
 
-In VS Code with the [Continue](https://continue.dev) extension, open `~/.continue/config.json` (or `config.yaml`) and configure:
+In VS Code with the [Continue](https://continue.dev) extension, configure your client using either `~/.continue/config.yaml` (recommended) or `~/.continue/config.json`:
+
+### YAML format (`~/.continue/config.yaml` — Recommended)
+
+```yaml
+name: Intel B70 Coding Server
+version: 0.0.1
+schema: v1
+
+models:
+  # Agent: Chat, Edit, Code actions (Port 8000)
+  - name: Qwen3-Coder 30B (Agent)
+    provider: openai
+    model: qwen3-coder-30b
+    apiBase: http://<SERVER_IP>:8000/v1
+    roles:
+      - chat
+      - edit
+      - apply
+
+  # Autocomplete: Fast FIM tab completions (Port 8001)
+  - name: Qwen2.5-Coder 1.5B (Autocomplete)
+    provider: openai
+    model: qwen2.5-coder-1.5b
+    apiBase: http://<SERVER_IP>:8001/v1
+    roles:
+      - autocomplete
+```
+
+### JSON format (`~/.continue/config.json`)
 
 ```json
 {

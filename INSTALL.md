@@ -50,6 +50,9 @@ Innan installation av operativsystem och drivrutiner måste moderkortet konfigur
 
 ## Steg 2: Rensa eventuella gamla AI-tjänster och drivrutiner
 
+> [!NOTE]
+> **Ny / ren Ubuntu Server 26.04:** Om du installerar på en helt nyinstallerad server kan du hoppa över detta steg och gå direkt till **Steg 3**.
+
 Om systemet har använts tidigare med Ollama eller Nvidia-grafikkort, städa bort dessa så att portar och drivrutiner inte krockar:
 
 ```bash
@@ -78,8 +81,8 @@ Allt som tidigare krävde manuella kloningar, PPA-tillägg och egna kompileringa
 ### Klona repot och kör:
 
 ```bash
-# Klona repot via SSH (eller HTTPS)
-git clone git@github.com:Bygren/arc-pro-b70-inference-setup-ubuntu-server.git
+# Klona repot (HTTPS rekommenderas för ren server, eller med din GitHub-token)
+git clone https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server.git
 cd arc-pro-b70-inference-setup-ubuntu-server
 
 # Ge körrättighet och kör som root
@@ -133,9 +136,15 @@ lsmod | grep xe
 
 ### 3. Övervaka GPU i realtid
 ```bash
-xpu-smi
+# Snygg realtidsgraf med VRAM, GPU-belastning och temperatur (rekommenderas):
+nvtop
+
+# Intels officiella motorövervakare:
+sudo intel_gpu_top
+
+# Temperaturer och fläktar:
+watch -n 1 sensors
 ```
-*Här ser du kortets klockfrekvens, temperatur, strömförbrukning och VRAM-allokering.*
 
 ### 4. Kontrollera AI-tjänsterna
 ```bash
@@ -166,9 +175,36 @@ curl -s http://localhost:8765/ | python3 -m json.tool
 
 ## Steg 6: Konfigurera Continue i VS Code
 
-Öppna VS Code på din utvecklingsdator och öppna Continues konfigurationsfil (klicka på kugghjulet i Continue eller öppna `~/.continue/config.json`):
+Öppna VS Code på din utvecklingsdator och konfigurera Continue (öppna `~/.continue/config.yaml` eller `config.json`):
 
-### Alternativ A: JSON-format (`~/.continue/config.json`)
+### Alternativ A: Modernt YAML-format (`~/.continue/config.yaml` - Rekommenderas)
+
+```yaml
+name: Intel B70 Coding Server
+version: 0.0.1
+schema: v1
+
+models:
+  # 1. Huvudmodell för Chat, Redigering och Frågor
+  - name: Qwen3-Coder 30B (Agent)
+    provider: openai
+    model: qwen3-coder-30b
+    apiBase: http://<SERVER-IP>:8000/v1
+    roles:
+      - chat
+      - edit
+      - apply
+
+  # 2. Blixtsnabb Tab-autocomplete under skrivande
+  - name: Qwen2.5-Coder 1.5B (Autocomplete)
+    provider: openai
+    model: qwen2.5-coder-1.5b
+    apiBase: http://<SERVER-IP>:8001/v1
+    roles:
+      - autocomplete
+```
+
+### Alternativ B: Äldre JSON-format (`~/.continue/config.json`)
 
 ```json
 {
@@ -191,26 +227,7 @@ curl -s http://localhost:8765/ | python3 -m json.tool
 }
 ```
 
-### Alternativ B: YAML-format (`~/.continue/config.yaml`)
-
-```yaml
-models:
-  - title: Qwen3 Coder 30B (Agent)
-    provider: openai
-    model: qwen3-coder-30b
-    apiBase: http://<SERVER-IP>:8000/v1
-    contextLength: 32768
-
-tabAutocompleteModel:
-  title: Qwen2.5 Coder 1.5B (Autocomplete)
-  provider: openai
-  model: qwen2.5-coder-1.5b
-  apiBase: http://<SERVER-IP>:8001/v1
-
-allowAnonymousTelemetry: false
-```
-
-> **Tips:** Ersätt `<SERVER-IP>` med IP-adressen till din server i det lokala nätverket (t.ex. `http://192.168.1.50:8000/v1`), eller `http://localhost:8000/v1` om du kör VS Code direkt på servern.
+> **Tips:** Ersätt `<SERVER-IP>` med IP-adressen till din server i det lokala nätverket (t.ex. `http://172.17.20.189:8000/v1`), eller `http://localhost:8000/v1` om du kör VS Code direkt på servern.
 
 ---
 
