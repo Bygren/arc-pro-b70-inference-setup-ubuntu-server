@@ -942,7 +942,7 @@ while true; do
     MAX_TEMP=0
     while IFS= read -r line; do
         case "$line" in *C*) ;; *) continue ;; esac
-        temp=$(echo "$line" | sed -n "s/.*+\([0-9]*\)\..*/\1/p")
+        temp=$(echo "$line" | cut -d'(' -f1 | grep -oE '[0-9]+' | head -1)
         if [ -n "$temp" ] && [ "$temp" -gt "$MAX_TEMP" ] 2>/dev/null; then
             MAX_TEMP=$temp
         fi
