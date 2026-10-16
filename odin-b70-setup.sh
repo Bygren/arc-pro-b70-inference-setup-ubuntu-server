@@ -235,7 +235,7 @@ echo ">>> [3/11] Intel GPU drivers (compute-runtime ${COMPUTE_RUNTIME_VERSION})"
 # Add Intel graphics APT repo for base packages
 mkdir -p /etc/apt/keyrings
 wget -qO- https://repositories.intel.com/gpu/intel-graphics.key | \
-    gpg --dearmor -o /etc/apt/keyrings/intel-graphics.gpg 2>/dev/null
+    gpg --dearmor --yes -o /etc/apt/keyrings/intel-graphics.gpg 2>/dev/null
 
 INTEL_REPO_CODENAME="${OS_CODENAME:-noble}"
 # Test if Intel repository supports current release; fallback to noble if not yet available
@@ -354,7 +354,7 @@ echo ">>> [3b/11] Intel oneAPI Base Toolkit for SYCL"
 # Configure Intel oneAPI repository (all main works on Ubuntu 24.04 and 26.04)
 mkdir -p /etc/apt/keyrings
 wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
-    gpg --dearmor -o /etc/apt/keyrings/oneapi-archive-keyring.gpg 2>/dev/null
+    gpg --dearmor --yes -o /etc/apt/keyrings/oneapi-archive-keyring.gpg 2>/dev/null
 
 echo "deb [signed-by=/etc/apt/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
     > /etc/apt/sources.list.d/oneAPI.list
