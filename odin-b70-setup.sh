@@ -600,18 +600,25 @@ echo "    Checking/Downloading models:"
 echo "      - Agent:        ${AGENT_MODEL_FILE} (${AGENT_MODEL_REPO})"
 echo "      - Autocomplete: ${AUTOCOMPLETE_MODEL_FILE} (${AUTOCOMPLETE_MODEL_REPO})"
 
-AGENT_REPO="${AGENT_MODEL_REPO}" AGENT_FILE="${AGENT_MODEL_FILE}" \
-AC_REPO="${AUTOCOMPLETE_MODEL_REPO}" AC_FILE="${AUTOCOMPLETE_MODEL_FILE}" \
-MODEL_DIR="${MODEL_DIR}" \
-sudo -u "${REAL_USER}" python3 - << 'PYEOF'
-import os
+sudo -u "${REAL_USER}" python3 - \
+    "${AGENT_MODEL_REPO}" \
+    "${AGENT_MODEL_FILE}" \
+    "${AUTOCOMPLETE_MODEL_REPO}" \
+    "${AUTOCOMPLETE_MODEL_FILE}" \
+    "${MODEL_DIR}" << 'PYEOF'
+import sys, os
 from huggingface_hub import hf_hub_download
 
+agent_repo = sys.argv[1]
+agent_file = sys.argv[2]
+ac_repo = sys.argv[3]
+ac_file = sys.argv[4]
+model_dir = sys.argv[5]
+
 models = [
-    (os.environ['AGENT_REPO'], os.environ['AGENT_FILE']),
-    (os.environ['AC_REPO'], os.environ['AC_FILE'])
+    (agent_repo, agent_file),
+    (ac_repo, ac_file)
 ]
-model_dir = os.environ['MODEL_DIR']
 
 for repo, filename in models:
     dest = os.path.join(model_dir, filename)
