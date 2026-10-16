@@ -1409,22 +1409,16 @@ fi
 
 # Install xpu-smi
 echo "    Installing xpu-smi..."
-DIST_TAG="u24"
-if [[ "${OS_VERSION}" =~ ^26 ]]; then
-    DIST_TAG="u26"
-fi
-
 XPUSMI_URL=$(curl -s https://api.github.com/repos/intel/xpumanager/releases/latest 2>/dev/null | \
-    DIST_TAG="${DIST_TAG}" python3 -c "
-import json, sys, os
-tag = os.environ.get('DIST_TAG', 'u24')
+    python3 -c "
+import json, sys
 try:
-    assets = [a['browser_download_url'] for a in json.load(sys.stdin).get('assets', []) if a['name'].endswith('.deb')]
-    matched = [u for u in assets if tag in u]
-    if not matched and tag != 'u24':
-        matched = [u for u in assets if 'u24' in u]
-    if matched:
-        print(matched[0])
+    assets = [a['browser_download_url'] for a in json.load(sys.stdin).get('assets', []) if a.get('name', '').endswith('.deb')]
+    ubuntu_assets = [u for u in assets if 'ubuntu' in u.lower() or 'u24' in u.lower()]
+    if ubuntu_assets:
+        print(ubuntu_assets[0])
+    elif assets:
+        print(assets[0])
 except Exception:
     pass
 " 2>/dev/null | head -1)
