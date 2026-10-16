@@ -146,7 +146,7 @@ apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     build-essential cmake ninja-build patch git curl wget \
-    htop lm-sensors \
+    htop lm-sensors intel-gpu-tools nvtop \
     pkg-config libssl-dev \
     software-properties-common \
     ca-certificates gpg \
