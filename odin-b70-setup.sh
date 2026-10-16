@@ -1363,11 +1363,13 @@ echo ">>> [10/11] Firewall & monitoring"
 
 if command -v ufw &>/dev/null; then
     ufw allow 22/tcp comment "SSH" 2>/dev/null
+    ufw allow 80/tcp comment "HTTP" 2>/dev/null
+    ufw allow 443/tcp comment "HTTPS" 2>/dev/null
     ufw allow "${AGENT_PORT}/tcp" comment "Continue Agent API" 2>/dev/null
     ufw allow "${AUTOCOMPLETE_PORT}/tcp" comment "Continue Autocomplete API" 2>/dev/null
     ufw allow 8765/tcp comment "Inference diag HTTP" 2>/dev/null
     ufw --force enable 2>/dev/null
-    echo "    Firewall: ports 22, ${AGENT_PORT}, ${AUTOCOMPLETE_PORT}, 8765 open"
+    echo "    Firewall: ports 22, 80, 443, ${AGENT_PORT}, ${AUTOCOMPLETE_PORT}, 8765 open"
 fi
 
 # Install xpu-smi

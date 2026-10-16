@@ -97,7 +97,7 @@ sudo ./odin-b70-setup.sh
    * `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` till `/mnt/models`
    * `qwen2.5-coder-1.5b-instruct-q8_0.gguf` till `/mnt/models`
 7. **Systemd-tjänster:** Skapar och aktiverar automatiskt `llama-agent.service` (port 8000) och `llama-autocomplete.service` (port 8001).
-8. **Brandvägg:** Öppnar portarna 22 (SSH), 8000 (Agent), 8001 (Autocomplete) och 8765 (Inference Diagnostic HTTP) i UFW.
+8. **Brandvägg:** Öppnar portarna 22 (SSH), 80 (HTTP), 443 (HTTPS), 8000 (Agent), 8001 (Autocomplete) och 8765 (Inference Diagnostic HTTP) i UFW.
 
 ---
 
