@@ -1,72 +1,74 @@
-# Installations- och Konfigurationsguide: Intel Arc Pro B70 AI-Kodserver
+# Installation and Configuration Guide: Intel Arc Pro B70 AI Coding Server
 
-En komplett steg-för-steg-guide för att sätta upp en lokal AI-kodserver baserad på **Intel Arc Pro B70 (32GB VRAM)** och **Ubuntu Server 26.04 LTS (eller 24.04 LTS)**, optimerad för **VS Code med Continue**.
+> 🇸🇪 **Svenska:** För en svensk version av denna installationsguide, se [INSTALL_SV.md](INSTALL_SV.md).
 
----
-
-## Maskinvaruspecifikation (Referenssystem)
-
-* **GPU:** Intel Arc Pro B70 (32GB VRAM, Battlemage Xe2-arkitektur)
-* **Processor (CPU):** AMD Ryzen 9 9900X (12 kärnor / 24 trådar, 4.4 GHz basklock, 76MB cache)
-* **Moderkort:** ASUS ROG Crosshair X870E Hero (PCIe 5.0)
-* **Primärminne (RAM):** Kingston 64GB DDR5 6000MHz
-* **Lagring (SSD):** WD Black SN7100 1TB NVMe PCIe 4.0
-* **Nätaggregat (PSU):** Phanteks 1000W Platinum
-* **CPU-kylning:** be quiet! Pure Rock Pro 3 Black
-* **Chassi:** Fractal Design North XL Svart
-* **Operativsystem:** Ubuntu Server 26.04 LTS
-
-> **Repogrund:** Baserat på [Bygren/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server) (förgrenat från [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server)), med integrerade optimeringar och 11 Xe2-prestandapatchar från [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes), fullt stöd för Intel oneAPI Base Toolkit, Ubuntu 26.04-drivrutinsdetektering samt automatisk installation av kodmodeller för VS Code Continue.
+A comprehensive step-by-step guide to setting up a dedicated local AI coding server powered by the **Intel Arc Pro B70 (32GB VRAM)** and **Ubuntu Server 26.04 LTS (or 24.04 LTS)**, optimized for **VS Code with Continue**.
 
 ---
 
-## Modellarkitektur för Continue
+## Hardware Specification (Reference System)
 
-Systemet kör två oberoende `llama-server`-processer med Intels hårdvaruoptimerade **SYCL-backend**:
+* **GPU:** Intel Arc Pro B70 (32GB VRAM, Battlemage Xe2 architecture)
+* **Processor (CPU):** AMD Ryzen 9 9900X (12 cores / 24 threads, 4.4 GHz base, 76MB cache)
+* **Motherboard:** ASUS ROG Crosshair X870E Hero (PCIe 5.0)
+* **Memory (RAM):** Kingston 64GB DDR5 6000MHz
+* **Storage (SSD):** WD Black SN7100 1TB NVMe PCIe 4.0
+* **Power Supply (PSU):** Phanteks 1000W Platinum
+* **CPU Cooler:** be quiet! Pure Rock Pro 3 Black
+* **Chassis:** Fractal Design North XL Black
+* **Operating System:** Ubuntu Server 26.04 LTS (or 24.04 LTS)
 
-| Roll i Continue | Modell | Kvantisering | Port | Enhet | VRAM | Funktion |
+> **Repository Background:** Maintained by [Bygren/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server) (forked from [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server)), integrating optimizations and 11 Xe2 performance patches from [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes), native Intel oneAPI Base Toolkit support, Ubuntu 26.04 driver detection, and automated coding model provisioning for VS Code Continue.
+
+---
+
+## Model Architecture for Continue
+
+The system runs two isolated `llama-server` instances accelerated by Intel's hardware-optimized **SYCL backend**:
+
+| Role in Continue | Model | Quantization | Port | Device | VRAM | Function |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Agent / Chat / Edit** | **Qwen3-Coder 30B-A3B-Instruct** | Q4_K_M | `8000` | `SYCL0` | ~18.8 GB | Chatta, resonera, skriva och redigera kod i projektet (32K kontext) |
-| **Tab Autocomplete** | **Qwen2.5-Coder-1.5B** | Q8_0 | `8001` | `SYCL1`* | ~1.6 GB | Blixtsnabb rad- och blockkomplettering i realtid (<15 ms per token) |
+| **Agent / Chat / Edit** | **Qwen3-Coder 30B-A3B-Instruct** | Q4_K_M | `8000` | `SYCL0` | ~18.8 GB | Chatting, architectural reasoning, and in-place code editing (32K context) |
+| **Tab Autocomplete** | **Qwen2.5-Coder-1.5B** | Q8_0 | `8001` | `SYCL1`* | ~1.6 GB | Ultra-low-latency line and block completion in real time (<15 ms per token) |
 
-*\*Har systemet 1 st GPU körs båda modellerna på `SYCL0` (18.8 + 1.6 = ~20.4 GB av kortets 32GB VRAM). Vid multi-GPU isoleras autocomplete till GPU 1 så att skrivflödet aldrig störs av tunga agentkörningar.*
+*\*On a single-GPU system, both models run concurrently on `SYCL0` (18.8 + 1.6 = ~20.4 GB of the card's 32GB VRAM). On multi-GPU systems, autocomplete is isolated to GPU 1 (`SYCL1`) so that fast typing flow is never impacted by heavy agent tasks.*
 
 ---
 
-## Steg 1: Förbered BIOS / UEFI (Kritiskt)
+## Step 1: Configure BIOS / UEFI (Required)
 
-Innan installation av operativsystem och drivrutiner måste moderkortet konfigureras så att processorn kan adressera hela grafikminnet på 32GB:
+Before installing the OS and drivers, the motherboard BIOS must be configured so the CPU can address the full 32GB of graphics memory:
 
-1. Starta datorn och tryck `DEL` eller `F2` för att gå in i BIOS (ASUS ROG UEFI).
-2. Ställ in följande:
+1. Power on the system and press `DEL` or `F2` to enter BIOS (ASUS ROG UEFI).
+2. Configure the following settings:
    * **Above 4G Decoding:** `ENABLED`
    * **Resizable BAR (ReBAR):** `ENABLED`
-   * **CSM (Compatibility Support Module):** `DISABLED` (Kör enbart ren UEFI)
-   * **Primary Display:** Sätt till `PEG / PCIe Slot` (Prioriterar Arc Pro B70 framför Ryzen 9900X inbyggda grafik)
-   * **PCIe Link Speed:** Sätt till `Gen 4` eller `Gen 5` (eller `Auto`)
-3. Spara och starta om (`F10`).
+   * **CSM (Compatibility Support Module):** `DISABLED` (Pure UEFI mode only)
+   * **Primary Display:** Set to `PEG / PCIe Slot` (Prioritizes the Arc Pro B70 over Ryzen 9900X integrated graphics)
+   * **PCIe Link Speed:** Set to `Gen 4` or `Gen 5` (or `Auto`)
+3. Save changes and reboot (`F10`).
 
 ---
 
-## Steg 2: Rensa eventuella gamla AI-tjänster och drivrutiner
+## Step 2: Clean Up Legacy AI Services & Drivers
 
 > [!NOTE]
-> **Ny / ren Ubuntu Server 26.04:** Om du installerar på en helt nyinstallerad server kan du hoppa över detta steg och gå direkt till **Steg 3**.
+> **Clean Ubuntu Server 26.04:** If installing on a fresh Ubuntu installation, you can skip this step and proceed directly to **Step 3**.
 
-Om systemet har använts tidigare med Ollama eller Nvidia-grafikkort, städa bort dessa så att portar och drivrutiner inte krockar:
+If the system was previously configured with Ollama or Nvidia drivers, remove them to prevent port and driver conflicts:
 
 ```bash
-# Stoppa och ta bort Ollama om den installerats tidigare
+# Stop and remove Ollama if previously installed
 sudo systemctl stop ollama.service 2>/dev/null || true
 sudo systemctl disable ollama.service 2>/dev/null || true
 sudo rm -f /etc/systemd/system/ollama.service
 sudo systemctl daemon-reload
 
-# Rensa eventuella Nvidia-drivrutiner
+# Purge any legacy Nvidia drivers
 sudo apt remove --purge '^nvidia-.*' -y 2>/dev/null || true
 sudo apt autoremove -y
 
-# Rensa Snap-versionen av Docker om den finns (Snap blockerar GPU och ignorerar daemon.json)
+# Remove Docker Snap package if present (Snap blocks GPU access and ignores daemon.json)
 if command -v snap &>/dev/null && snap list docker &>/dev/null; then
     sudo snap remove --purge docker
 fi
@@ -74,39 +76,39 @@ fi
 
 ---
 
-## Steg 3: Kör installationsskriptet
+## Step 3: Run the Automated Setup Script
 
-Allt som tidigare krävde manuella kloningar, PPA-tillägg och egna kompileringar är nu samlat i installationsskriptet.
+All manual driver installations, oneAPI repository configurations, Docker subnet isolation, and compilation steps are consolidated into a single turnkey script.
 
-### Klona repot och kör:
+### Clone the repository and execute:
 
 ```bash
-# Klona repot (HTTPS rekommenderas för ren server, eller med din GitHub-token)
+# Clone the repository (HTTPS recommended for clean servers, or using your GitHub token)
 git clone https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server.git
 cd arc-pro-b70-inference-setup-ubuntu-server
 
-# Ge körrättighet och kör som root
+# Grant execute permissions and run as root
 chmod +x odin-b70-setup.sh
 sudo ./odin-b70-setup.sh
 ```
 
-### Vad skriptet gör automatiskt:
-1. **Linux-kärna 6.17+ & Drivrutiner:** Installerar Intel Xe KMD-drivrutin, firmware och Intel compute-runtime.
-2. **Intel oneAPI Base Toolkit:** Installerar Intels officiella DPC++-kompilator (`icx`/`icpx`), oneMKL och oneDNN.
-3. **Mesa-detektering för Ubuntu 26.04:** Använder Ubuntu 26.04:s inbyggda moderna Mesa-stack (och undviker instabila externa PPA-arkiv).
-4. **Docker & Nätverkskonfiguration:** Installerar Docker och konfigurerar automatiskt `/etc/docker/daemon.json` med `bip: 172.30.0.1/24` och adresspool `172.30.0.0/16` så att Dockers standardbrygga (`docker0`) flyttas bort från ditt LAN-subnät (`172.17.0.0/16`).
-5. **llama.cpp med 11 Xe2-prestandapatchar:** Kompilerar `llama-server` med native SYCL-acceleration för Battlemage (MoE MMVQ kernels, Xe2 warptiles, minnesfixar).
-6. **Modellnedladdning:** Hämtar automatiskt:
-   * `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` till `/mnt/models`
-   * `qwen2.5-coder-1.5b-instruct-q8_0.gguf` till `/mnt/models`
-7. **Systemd-tjänster:** Skapar och aktiverar automatiskt `llama-agent.service` (port 8000) och `llama-autocomplete.service` (port 8001).
-8. **Brandvägg:** Öppnar portarna 22 (SSH), 80 (HTTP), 443 (HTTPS), 8000 (Agent), 8001 (Autocomplete) och 8765 (Inference Diagnostic HTTP) i UFW.
+### What the script automates:
+1. **Linux Kernel 6.17+ & Drivers:** Installs the Intel Xe KMD driver, firmware, and Intel compute-runtime.
+2. **Intel oneAPI Base Toolkit:** Installs the official DPC++ compiler (`icx`/`icpx`), oneMKL, and oneDNN.
+3. **Mesa Detection for Ubuntu 26.04:** Utilizes Ubuntu 26.04's native, modern Mesa stack (avoiding broken third-party PPAs).
+4. **Docker & Network Isolation:** Installs Docker CE and configures `/etc/docker/daemon.json` with `bip: 172.30.0.1/24` and address pool `172.30.0.0/16`, moving Docker's default bridge away from standard office/home LAN subnets (`172.17.0.0/16`).
+5. **llama.cpp with 11 Xe2 Performance Patches:** Compiles `llama-server` with native SYCL acceleration for Battlemage (MoE MMVQ kernels, Xe2 warptiles, memory alignment fixes).
+6. **Model Downloads:** Automatically downloads:
+   * `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` to `/mnt/models`
+   * `qwen2.5-coder-1.5b-instruct-q8_0.gguf` to `/mnt/models`
+7. **Systemd Services:** Creates, registers, and starts `llama-agent.service` (port 8000) and `llama-autocomplete.service` (port 8001).
+8. **Firewall (UFW):** Opens ports 22 (SSH), 80 (HTTP), 443 (HTTPS), 8000 (Agent), 8001 (Autocomplete), and 8765 (Inference Diagnostics).
 
 ---
 
-## Steg 4: Starta om servern
+## Step 4: Reboot the Server
 
-Efter att skriptet har körts klart krävs en omstart för att den nya Linux-kärnan och Xe-drivrutinen ska laddas:
+Once the installation finishes, reboot the system to load the newly installed kernel and Intel Xe driver:
 
 ```bash
 sudo reboot
@@ -114,70 +116,70 @@ sudo reboot
 
 ---
 
-## Steg 5: Verifiera att hårdvara och tjänster fungerar
+## Step 5: Verify Hardware & Running Services
 
-Logga in på servern igen efter omstarten och kontrollera statusen:
+Log back into the server after reboot and check the operational status:
 
-### 1. Snabb systemstatus via sysinfo
+### 1. Quick system check via sysinfo
 ```bash
 ~/sysinfo.sh
 ```
-*Detta skript ger dig en direkt översikt av IP-adress, kärna, GPU-temperaturer, Vulkan-enheter och hälsostatus för Continue Agent (port 8000) och Autocomplete (port 8001).*
+*Provides an immediate dashboard showing your server IP, kernel version, GPU temperatures, Vulkan device enumeration, and endpoint health for Agent (port 8000) and Autocomplete (port 8001).*
 
-### 2. Kontrollera grafikkortet
+### 2. Verify GPU Detection
 ```bash
-# Verifiera att B70 identifieras på PCIe-bussen
+# Verify B70 is enumerated on the PCIe bus
 lspci -v | grep -i VGA
-# Ska visa "Intel Corporation Battlemage G31" eller enhet e223
+# Should output "Intel Corporation Battlemage G31" or device ID e223
 
-# Verifiera att xe-drivrutinen är aktiv
+# Verify the xe kernel module is loaded
 lsmod | grep xe
 ```
 
-### 3. Övervaka GPU i realtid
+### 3. Real-Time GPU Monitoring
 ```bash
-# Snygg realtidsgraf med VRAM, GPU-belastning och temperatur (rekommenderas):
+# Interactive GPU monitor with VRAM, engine usage, and temperature (recommended):
 nvtop
 
-# Intels officiella motorövervakare:
+# Intel's official hardware engine monitor:
 sudo intel_gpu_top
 
-# Temperaturer och fläktar:
+# Thermal and fan monitoring:
 watch -n 1 sensors
 ```
 
-### 4. Kontrollera AI-tjänsterna
+### 4. Verify Systemd Services
 ```bash
-# Kontrollera Agent-tjänsten (Qwen3-Coder)
+# Check the Agent service (Qwen3-Coder)
 sudo systemctl status llama-agent
 
-# Kontrollera Autocomplete-tjänsten (Qwen2.5-Coder)
+# Check the Autocomplete service (Qwen2.5-Coder)
 sudo systemctl status llama-autocomplete
 ```
 
-### 5. Testa endpointsen via curl
+### 5. Test API Endpoints via curl
 ```bash
-# Testa Agent-endpointen (port 8000)
+# Test Agent completion endpoint (port 8000)
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen3-coder-30b","messages":[{"role":"user","content":"Skriv en hej-värld i Python"}],"max_tokens":50}'
+  -d '{"model":"qwen3-coder-30b","messages":[{"role":"user","content":"Write a quick hello world in Python"}],"max_tokens":50}'
 
-# Testa Autocomplete-endpointen (port 8001)
+# Test Autocomplete completion endpoint (port 8001)
 curl http://localhost:8001/v1/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen2.5-coder-1.5b","prompt":"def fibonacci(n):\n","max_tokens":30}'
 
-# Testa hälsosidan för diagnos (port 8765)
+# Test Inference Diagnostic HTTP status (port 8765)
 curl -s http://localhost:8765/ | python3 -m json.tool
 ```
 
 ---
 
-## Steg 6: Konfigurera Continue i VS Code
+## Step 6: Configure Continue in VS Code
 
-Öppna VS Code på din utvecklingsdator och konfigurera Continue (öppna `~/.continue/config.yaml` eller `config.json`):
+On your client development machine, open VS Code and configure Continue (`~/.continue/config.yaml` or `config.json`):
 
-### Alternativ A: Modernt YAML-format (`~/.continue/config.yaml` - Rekommenderas)
+### Option A: Modern YAML Format (`~/.continue/config.yaml` — Recommended)
 
 ```yaml
 name: Intel B70 Coding Server
@@ -185,7 +187,7 @@ version: 0.0.1
 schema: v1
 
 models:
-  # 1. Huvudmodell för Chat, Redigering och Frågor
+  # 1. Primary Model for Chat, Edit, and Agent Reasoning
   - name: Qwen3-Coder 30B (Agent)
     provider: openai
     model: qwen3-coder-30b
@@ -195,7 +197,7 @@ models:
       - edit
       - apply
 
-  # 2. Blixtsnabb Tab-autocomplete under skrivande
+  # 2. Ultra-fast Tab Autocomplete
   - name: Qwen2.5-Coder 1.5B (Autocomplete)
     provider: openai
     model: qwen2.5-coder-1.5b
@@ -204,7 +206,7 @@ models:
       - autocomplete
 ```
 
-### Alternativ B: Äldre JSON-format (`~/.continue/config.json`)
+### Option B: Legacy JSON Format (`~/.continue/config.json`)
 
 ```json
 {
@@ -227,44 +229,44 @@ models:
 }
 ```
 
-> **Tips:** Ersätt `<SERVER-IP>` med IP-adressen till din server i det lokala nätverket (t.ex. `http://172.17.20.189:8000/v1`), eller `http://localhost:8000/v1` om du kör VS Code direkt på servern.
+> **Tip:** Replace `<SERVER-IP>` with the local network IP address of your server (e.g., `http://172.17.20.189:8000/v1`), or `http://localhost:8000/v1` if running VS Code directly on the host.
 
 ---
 
-## Manuell drift och felsökning
+## Manual Execution & Troubleshooting
 
-Om du föredrar att köra serverprocesserna manuellt i en terminal istället för som systemd-bakgrundstjänster finns färdiga startskript installerade i din hemkatalog:
+If you prefer running server instances interactively in a terminal rather than as systemd services, helper scripts are installed in your home directory:
 
 ```bash
-# Stoppa bakgrundstjänsterna först
+# Stop background services first
 sudo systemctl stop llama-agent llama-autocomplete
 
-# Starta Agent manuellt (port 8000)
+# Start Agent manually (port 8000)
 ~/start_agent.sh
 
-# Starta Autocomplete manuellt (port 8001 i en ny terminal)
+# Start Autocomplete manually in another terminal (port 8001)
 ~/start_autocomplete.sh
 ```
 
-### Förklaring av de kritiska miljövariablerna och flaggorna:
-* `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1`: Tar bort Level Zeros standardspärr och låter programmet allokera upp till hela kortets 32GB minne.
-* `GGML_SYCL_DISABLE_OPT=1`: **Obligatorisk för MoE-modeller (Qwen3).** Förhindrar att modellens slot-initiering krockar med drivrutinen och stänger av servern.
-* `-fa 0`: Stänger av Flash Attention. SYCL:s Flash Attention är ännu inte helt stabil på MoE på Intel B70; standardattention med de 11 Xe2-patcharna ger ändå maximal prestanda.
-* `--defrag-thold 0.1`: Defragmenterar automatiskt KV-cachen när fragmenteringen överstiger 10 %, vilket håller tok/s stabil över långa kodsessioner.
-* `-t 1`: Använder 1 CPU-avlastningstråd. Fler CPU-trådar skapar kö-kollisioner på PCIe/Xe2-arkitekturen och sänker prestandan.
-* `--device SYCL0`: Binder processen till specifik Intel Arc Pro-GPU.
+### Critical Flags and Environment Variables Explained:
+* `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1`: Removes Level Zero's default memory restriction, allowing processes to allocate up to the full 32GB VRAM.
+* `GGML_SYCL_DISABLE_OPT=1`: **Mandatory for MoE architectures (Qwen3).** Prevents runtime driver faults during slot initialization.
+* `-fa 0`: Disables Flash Attention. SYCL Flash Attention is currently unstable on MoE on Battlemage; standard attention with the 11 Xe2 patches achieves optimal tok/s.
+* `--defrag-thold 0.1`: Triggers KV-cache defragmentation when fragmentation exceeds 10%, keeping throughput stable during long development sessions.
+* `-t 1`: Allocates 1 CPU offload thread. Additional threads cause queue contention across the PCIe/Xe2 bus on Battlemage, reducing throughput.
+* `--device SYCL0`: Binds the process to the target Intel Arc Pro GPU device.
 
 ---
 
-## Hur du byter eller uppgraderar en modell
+## How to Swap or Upgrade Models
 
-Att byta ut en modell görs i tre snabba steg utan att du behöver installera om eller bygga om AI-motorn. 
+Swapping models requires only three simple steps without reinstalling drivers or rebuilding `llama.cpp`.
 
-Här är ett konkret exempel där vi byter ut Agent-modellen från **Qwen3-Coder 30B-A3B** till **Devstral Small 2 24B Instruct 2512** (utvecklad av Mistral AI & All Hands AI, ca 14.5 GB VRAM i Q4_K_M-format).
+Here is an example swapping the Agent model from **Qwen3-Coder 30B-A3B** to **Devstral Small 2 24B Instruct 2512** (by Mistral AI & All Hands AI, ~14.5 GB VRAM in Q4_K_M).
 
-### Steg 1: Ladda ner den nya modellen till `/mnt/models`
+### Step 1: Download the new model to `/mnt/models`
 
-Kör följande Python-kommando på servern för att hämta GGUF-filen via `huggingface_hub`:
+Run this quick Python command to download the GGUF file via `huggingface_hub`:
 
 ```bash
 python3 - << 'EOF'
@@ -274,86 +276,72 @@ repo = "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF"
 filename = "Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf"
 dest = "/mnt/models"
 
-print(f"Laddar ner {filename} från {repo}...")
+print(f"Downloading {filename} from {repo}...")
 hf_hub_download(repo_id=repo, filename=filename, local_dir=dest)
-print("Nedladdning klar!")
+print("Download complete!")
 EOF
 ```
 
-### Steg 2: Uppdatera startskriptet (`~/start_agent.sh`)
+### Step 2: Update the Start Script (`~/start_agent.sh`)
 
-Öppna startskriptet för agenten i en textredigerare:
+Open the agent start script in an editor:
 
 ```bash
 nano ~/start_agent.sh
 ```
 
-Ändra följande rader:
-1. Peka på den nya modellfilen:
+Update the following values:
+1. Point to the new model file:
    ```bash
    MODEL_FILE="/mnt/models/Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf"
    ```
-2. Ändra modellens alias:
+2. Update the model alias:
    ```bash
    --alias devstral-small-24b
    ```
 
-Spara filen (`Ctrl+O`, tryck `Enter`) och stäng nano (`Ctrl+X`).
+Save (`Ctrl+O`, `Enter`) and exit (`Ctrl+X`).
 
-> **💡 Behövs det några nya inställningar för SYCL eller omkompilering?**
+> **💡 Are new SYCL settings or recompilations required?**
 >
-> **Nej!** Du behöver varken kompilera om eller göra nya SYCL-installationer:
-> 1. **Motorn är universell:** `llama-server`-binären i `/opt/llama.cpp/llama-sycl-build/bin/llama-server` är redan färdigkompilerad med oneAPI DPC++/SYCL och stöder alla GGUF-arkitekturer (Mistral, Devstral, Qwen, Llama, Gemma m.fl.).
-> 2. **SYCL-inställningarna ärvs automatiskt:** Eftersom `~/start_agent.sh` redan innehåller:
->    - `source /opt/intel/oneapi/setvars.sh` (Initierar oneAPI-miljön)
->    - `--device SYCL0` (Styr körningen till Intel Arc Pro-grafikkortet)
->    - `-ngl 999` (Lägger alla modellens lager direkt i B70:s snabba VRAM)
->    - `export UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1` (Låter SYCL allokera upp till 32GB VRAM)
->    ...kommer den nya modellen automatiskt att köras med full SYCL-acceleration på ditt Arc-kort!
-> 3. **MoE vs Tät (Dense) modell:**
->    - `export GGML_SYCL_DISABLE_OPT=1`: Detta krävs specifikt för MoE-modeller (som Qwen3-Coder) för att undvika krasch vid slot-initiering. För Devstral (som är en standard tät modell) gör det ingen skada att låta den stå kvar, men du kan även ta bort den.
->    - `--reasoning off`: Stänger av tänkande `<think>`-block i Qwen-modeller. Devstral har ingen sådan mekanism, så flaggan ignoreras harmlöst.
+> **No.** 
+> 1. **Universal Engine:** The `llama-server` binary in `/opt/llama.cpp/llama-sycl-build/bin/llama-server` is built with oneAPI DPC++/SYCL and natively supports all standard GGUF architectures (Mistral, Devstral, Qwen, Llama, Gemma, etc.).
+> 2. **Inherited SYCL Flags:** Because `~/start_agent.sh` already loads `source /opt/intel/oneapi/setvars.sh`, `--device SYCL0`, `-ngl 999`, and `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1`, the new model automatically leverages full SYCL acceleration.
+> 3. **MoE vs Dense Models:**
+>    - `GGML_SYCL_DISABLE_OPT=1`: Required for MoE models (like Qwen3). For dense models like Devstral, leaving this set is harmless.
+>    - `--reasoning off`: Disables `<think>` reasoning tags in Qwen models; ignored by models that don't output reasoning blocks.
 
-Starta sedan om agent-tjänsten så att den laddar den nya modellen:
+Restart the agent service:
 
 ```bash
 sudo systemctl restart llama-agent
 ```
 
-Verifiera att den nya modellen körs och svarar:
+Verify service status and query the new model:
 
 ```bash
 sudo systemctl status llama-agent
 
-# Testa anrop mot nya modellen
+# Test the new model
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"devstral-small-24b","messages":[{"role":"user","content":"Hej Devstral!"}],"max_tokens":30}'
+  -d '{"model":"devstral-small-24b","messages":[{"role":"user","content":"Hello Devstral!"}],"max_tokens":30}'
 ```
 
-### Steg 3: Uppdatera Continue i VS Code
+### Step 3: Update Continue Configuration in VS Code
 
-Öppna Continues inställningar i VS Code (`~/.continue/config.json`) och uppdatera `model` och `title`:
+In `~/.continue/config.yaml` or `config.json`, update the model name:
 
-```json
-{
-  "models": [
-    {
-      "title": "Devstral Small 2 24B (Agent)",
-      "provider": "openai",
-      "model": "devstral-small-24b",
-      "apiBase": "http://<SERVER-IP>:8000/v1",
-      "contextLength": 32768
-    }
-  ],
-  "tabAutocompleteModel": {
-    "title": "Qwen2.5 Coder 1.5B (Autocomplete)",
-    "provider": "openai",
-    "model": "qwen2.5-coder-1.5b",
-    "apiBase": "http://<SERVER-IP>:8001/v1"
-  }
-}
+```yaml
+models:
+  - name: Devstral Small 2 24B (Agent)
+    provider: openai
+    model: devstral-small-24b
+    apiBase: http://<SERVER-IP>:8000/v1
+    roles:
+      - chat
+      - edit
+      - apply
 ```
 
-Klart! Nu använder Continue din nya Devstral Small 2 24B-modell för agentkodning, chat och redigering, medan Qwen2.5-Coder 1.5B fortsätter att sköta autocomplete i bakgrunden.
-
+Your setup is ready! Continue now routes agent and editing requests to the new model while Qwen2.5-Coder 1.5B continues handling tab autocompletions in the background.

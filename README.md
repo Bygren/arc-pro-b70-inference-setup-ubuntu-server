@@ -7,8 +7,8 @@
 > **Built-in Intel oneAPI & Xe2 Performance Patches:**
 > This edition integrates **Intel oneAPI Base Toolkit** (`icx`/`icpx`, DPC++, oneMKL, oneDNN) and automatically compiles **llama.cpp with native SYCL and Vulkan backends**. It incorporates the **11 Battlemage Xe2 cherry-picked patches** directly from [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes) (MoE MMVQ, Xe2 warptile, Q8_0 reorder fix, etc.) into the build so you get maximum tok/s and MoE stability out of the box without needing manual secondary patch steps.
 >
-> 📖 **Komplett installationsguide (steg-för-steg):**
-> Se [INSTALL.md](INSTALL.md) för en utförlig manual med hårdvarureferens (Ryzen 9900X / X870E Hero / Arc Pro B70), BIOS-inställningar, automatiserad installation och Continue-konfiguration för VS Code.
+> 📖 **Comprehensive Step-by-Step Installation Guide:**
+> See [INSTALL.md](INSTALL.md) for full walkthrough including hardware reference (Ryzen 9900X / X870E Hero / Arc Pro B70), BIOS settings, automated setup, and Continue configuration for VS Code. *(Svensk manual finns i [INSTALL_SV.md](INSTALL_SV.md))*
 
 Automated setup script for running LLM coding assistance and inference on Intel Arc Pro B70 GPU with llama.cpp SYCL — optimized for VS Code with Continue (Agent on port 8000, Autocomplete on port 8001).
 
@@ -16,7 +16,7 @@ Automated setup script for running LLM coding assistance and inference on Intel 
 
 | Component | Status | Details |
 |---|---|---|
-| **Installation Guide** | [INSTALL.md](INSTALL.md) | Steg-för-steg manual för BIOS, Ubuntu 26.04/24.04, modellsättning & Continue |
+| **Installation Guide** | [INSTALL.md](INSTALL.md) / [Svenska](INSTALL_SV.md) | Step-by-step guide for BIOS, Ubuntu 26.04/24.04, model provisioning & Continue |
 | **OS Support** | Ubuntu Server 24.04 LTS & 26.04 LTS | Dynamic repository handling, kernel 6.17+ verification, automated Mesa detection |
 | **Intel oneAPI** | Built-in | Installs `intel-oneapi-compiler-dpcpp-cpp`, `intel-oneapi-mkl-devel`, `intel-oneapi-dnnl-devel` |
 | **llama.cpp Engine** | Built-in (SYCL + Vulkan) | Pinned base with 11 Battlemage Xe2 cherry-picked patches from [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes) |
