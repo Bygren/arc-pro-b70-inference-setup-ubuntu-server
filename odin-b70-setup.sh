@@ -141,6 +141,7 @@ if ls /etc/apt/sources.list.d/*kobuk* &>/dev/null; then
     rm -f /etc/apt/sources.list.d/*kobuk* 2>/dev/null || true
 fi
 
+add-apt-repository -y universe 2>/dev/null || true
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
@@ -151,7 +152,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     ca-certificates gpg \
     python3 python3-pip python3-venv \
     unzip pciutils lshw numactl \
-    clinfo glslang-tools \
+    clinfo glslang-tools glslc \
     vulkan-tools libvulkan-dev libvulkan1 \
     mesa-vulkan-drivers
 echo "    Done."
@@ -432,14 +433,18 @@ usermod -aG docker "${REAL_USER}" 2>/dev/null || true
 # Install Docker buildx (required for building vLLM from source)
 if ! docker buildx version &>/dev/null; then
     echo "    Installing Docker buildx..."
-    mkdir -p "${REAL_HOME}/.docker/cli-plugins"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-buildx 2>/dev/null || true
+fi
+if ! docker buildx version &>/dev/null; then
+    mkdir -p /usr/local/lib/docker/cli-plugins "${REAL_HOME}/.docker/cli-plugins"
     curl -sL "https://github.com/docker/buildx/releases/download/v0.23.0/buildx-v0.23.0.linux-amd64" \
-        -o "${REAL_HOME}/.docker/cli-plugins/docker-buildx"
-    chmod +x "${REAL_HOME}/.docker/cli-plugins/docker-buildx"
+        -o /usr/local/lib/docker/cli-plugins/docker-buildx
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+    cp -f /usr/local/lib/docker/cli-plugins/docker-buildx "${REAL_HOME}/.docker/cli-plugins/docker-buildx"
     chown "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/.docker/cli-plugins/docker-buildx"
-    echo "    Buildx installed: $(docker buildx version)"
+    echo "    Buildx installed: $(docker buildx version 2>/dev/null || echo 'OK')"
 else
-    echo "    Docker buildx already installed"
+    echo "    Docker buildx already installed: $(docker buildx version 2>/dev/null || echo 'OK')"
 fi
 echo "    Done."
 
@@ -497,8 +502,14 @@ fi
 cd "$LLAMA_SRC"
 sudo -u "${REAL_USER}" git fetch origin
 sudo -u "${REAL_USER}" git checkout "$LLAMA_BASE_SHA"
+sudo -u "${REAL_USER}" git reset --hard "$LLAMA_BASE_SHA" 2>/dev/null || true
+sudo -u "${REAL_USER}" git clean -fd 2>/dev/null || true
 sudo -u "${REAL_USER}" git branch -D b70-kit 2>/dev/null || true
 sudo -u "${REAL_USER}" git checkout -b b70-kit
+
+# Configure git committer identity so git am doesn't fail
+sudo -u "${REAL_USER}" git config user.name "B70 Installer"
+sudo -u "${REAL_USER}" git config user.email "installer@b70.local"
 
 # Apply B70 Xe2 performance patches (11 cherry-picks from speedup-bugfixes)
 if [[ -d "$PATCH_DIR" ]] && [[ $(find "$PATCH_DIR" -name "*.patch" 2>/dev/null | wc -l) -gt 0 ]]; then
@@ -517,7 +528,7 @@ LLAMA_SYCL_BUILD="${LLAMA_ROOT}/llama-sycl-build"
 if [[ -f /opt/intel/oneapi/setvars.sh ]]; then
     echo "    Building llama.cpp SYCL backend (target: Intel Xe2/BMG, icx/icpx)..."
     rm -rf "$LLAMA_SYCL_BUILD"
-    sudo -u "${REAL_USER}" -E bash -c "
+    sudo -u "${REAL_USER}" bash -c "
         set -e
         source /opt/intel/oneapi/setvars.sh --force
         cmake -B '$LLAMA_SYCL_BUILD' -S '$LLAMA_SRC' -G Ninja \
@@ -540,18 +551,35 @@ fi
 echo "    Building llama.cpp Vulkan backend..."
 LLAMA_VK_BUILD="${LLAMA_ROOT}/llama-vulkan-build"
 rm -rf "$LLAMA_VK_BUILD"
-sudo -u "${REAL_USER}" cmake -B "$LLAMA_VK_BUILD" -S "$LLAMA_SRC" -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DGGML_VULKAN=ON \
-    -DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=ON \
-    -DGGML_SYCL=OFF 2>&1 | tee -a "$LOG"
-sudo -u "${REAL_USER}" cmake --build "$LLAMA_VK_BUILD" -j$(nproc) 2>&1 | tee -a "$LOG"
-echo "    Built Vulkan server: ${LLAMA_VK_BUILD}/bin/llama-server"
 
-# Compatibility symlink in user home for start_llamacpp.sh
+if ! command -v glslc &>/dev/null; then
+    echo "    Installing glslc for Vulkan shader compilation..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq glslc 2>/dev/null || true
+fi
+
+VK_COOPMAT_FLAG="-DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=ON"
+if ! command -v glslc &>/dev/null; then
+    echo "    Notice: glslc not found, building Vulkan without glslc coopmat support..."
+    VK_COOPMAT_FLAG="-DGGML_VULKAN_COOPMAT_GLSLC_SUPPORT=OFF"
+fi
+
 mkdir -p "${REAL_HOME}/llama.cpp/build/bin"
 chown -R "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/llama.cpp"
-ln -sf "${LLAMA_VK_BUILD}/bin/llama-server" "${REAL_HOME}/llama.cpp/build/bin/llama-server"
+
+if sudo -u "${REAL_USER}" cmake -B "$LLAMA_VK_BUILD" -S "$LLAMA_SRC" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DGGML_VULKAN=ON \
+    "${VK_COOPMAT_FLAG}" \
+    -DGGML_SYCL=OFF 2>&1 | tee -a "$LOG" && \
+   sudo -u "${REAL_USER}" cmake --build "$LLAMA_VK_BUILD" -j$(nproc) 2>&1 | tee -a "$LOG"; then
+    echo "    Built Vulkan server: ${LLAMA_VK_BUILD}/bin/llama-server"
+    ln -sf "${LLAMA_VK_BUILD}/bin/llama-server" "${REAL_HOME}/llama.cpp/build/bin/llama-server"
+else
+    echo "    WARNING: Vulkan build failed or incomplete. Using SYCL backend as primary."
+    if [[ -f "${LLAMA_SYCL_BUILD}/bin/llama-server" ]]; then
+        ln -sf "${LLAMA_SYCL_BUILD}/bin/llama-server" "${REAL_HOME}/llama.cpp/build/bin/llama-server"
+    fi
+fi
 
 # -----------------------------------------------------------
 # 7. Download coding models for Continue (Agent & Autocomplete)
