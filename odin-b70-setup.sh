@@ -125,6 +125,22 @@ NEED_REBOOT=false
 # 1. System update & essential packages
 # -----------------------------------------------------------
 echo ">>> [1/11] System update & essentials"
+
+# Clean up legacy AI services or conflicting PPAs from prior experiments
+if systemctl list-unit-files ollama.service &>/dev/null || [[ -f /etc/systemd/system/ollama.service ]]; then
+    echo "    Cleaning up legacy Ollama service..."
+    systemctl stop ollama.service 2>/dev/null || true
+    systemctl disable ollama.service 2>/dev/null || true
+    rm -f /etc/systemd/system/ollama.service
+    systemctl daemon-reload
+fi
+
+# Remove Kobuk team PPA if present (can conflict with pinned Intel BMG driver packages)
+if ls /etc/apt/sources.list.d/*kobuk* &>/dev/null; then
+    echo "    Removing conflicting kobuk-team/intel-graphics PPA..."
+    rm -f /etc/apt/sources.list.d/*kobuk* 2>/dev/null || true
+fi
+
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
