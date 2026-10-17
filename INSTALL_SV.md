@@ -29,9 +29,9 @@ Systemet kör två oberoende `llama-server`-processer med Intels hårdvaruoptime
 | Roll i Continue | Modell | Kvantisering | Port | Enhet | VRAM | Funktion |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Agent / Chat / Edit** | **Qwen3-Coder 30B-A3B-Instruct** | Q4_K_M | `8000` | `SYCL0` | ~18.8 GB | Chatta, resonera, skriva och redigera kod i projektet (32K kontext) |
-| **Tab Autocomplete** | **Qwen2.5-Coder-1.5B** | Q8_0 | `8001` | `SYCL1`* | ~1.6 GB | Blixtsnabb rad- och blockkomplettering i realtid (<15 ms per token) |
+| **Tab Autocomplete** | **Qwen2.5-Coder-1.5B** | Q8_0 | `8001` | `SYCL0`* | ~1.6 GB | Blixtsnabb rad- och blockkomplettering i realtid (<15 ms per token) |
 
-*\*Har systemet 1 st GPU körs båda modellerna på `SYCL0` (18.8 + 1.6 = ~20.4 GB av kortets 32GB VRAM). Vid multi-GPU isoleras autocomplete till GPU 1 så att skrivflödet aldrig störs av tunga agentkörningar.*
+*\*På system med 1 st GPU (standard) körs båda modellerna samtidigt på `SYCL0` (18.8 + 1.6 = ~20.4 GB av kortets 32GB VRAM). Vid multi-GPU flyttas autocomplete automatiskt till GPU 1 (`SYCL1`) så att skrivflödet aldrig störs av tunga agentkörningar.*
 
 ---
 

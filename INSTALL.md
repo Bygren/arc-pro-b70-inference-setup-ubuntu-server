@@ -29,9 +29,9 @@ The system runs two isolated `llama-server` instances accelerated by Intel's har
 | Role in Continue | Model | Quantization | Port | Device | VRAM | Function |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Agent / Chat / Edit** | **Qwen3-Coder 30B-A3B-Instruct** | Q4_K_M | `8000` | `SYCL0` | ~18.8 GB | Chatting, architectural reasoning, and in-place code editing (32K context) |
-| **Tab Autocomplete** | **Qwen2.5-Coder-1.5B** | Q8_0 | `8001` | `SYCL1`* | ~1.6 GB | Ultra-low-latency line and block completion in real time (<15 ms per token) |
+| **Tab Autocomplete** | **Qwen2.5-Coder-1.5B** | Q8_0 | `8001` | `SYCL0`* | ~1.6 GB | Ultra-low-latency line and block completion in real time (<15 ms per token) |
 
-*\*On a single-GPU system, both models run concurrently on `SYCL0` (18.8 + 1.6 = ~20.4 GB of the card's 32GB VRAM). On multi-GPU systems, autocomplete is isolated to GPU 1 (`SYCL1`) so that fast typing flow is never impacted by heavy agent tasks.*
+*\*On single-GPU systems (standard setup), both models run concurrently on `SYCL0` (18.8 + 1.6 = ~20.4 GB of the card's 32GB VRAM). On multi-GPU systems, autocomplete automatically offloads to GPU 1 (`SYCL1`) so that typing flow is never impacted by heavy agent tasks.*
 
 ---
 

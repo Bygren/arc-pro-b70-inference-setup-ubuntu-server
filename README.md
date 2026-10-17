@@ -51,10 +51,10 @@ Two dedicated llama.cpp SYCL servers tailored for developer workflows in VS Code
 
 | Port | Role | Model | Quant | Device | VRAM | Context | Purpose |
 |------|------|-------|-------|--------|------|---------|---------|
-| **8000** | **Agent** | Qwen3-Coder 30B-A3B-Instruct | Q4_K_M | SYCL0 (Card 0) | ~18.8 GB | 32768 | Chat, inline code edits, repo-level agent reasoning |
-| **8001** | **Autocomplete** | Qwen2.5-Coder 1.5B | Q8_0 | SYCL1 (Card 1) | ~1.6 GB | 4096 | Low-latency FIM (Fill-in-the-Middle) tab-completion |
+| **8000** | **Agent** | Qwen3-Coder 30B-A3B-Instruct | Q4_K_M | `SYCL0` (Card 0) | ~18.8 GB | 32768 | Chat, inline code edits, repo-level agent reasoning |
+| **8001** | **Autocomplete** | Qwen2.5-Coder 1.5B | Q8_0 | `SYCL0`* (Card 0) | ~1.6 GB | 4096 | Low-latency FIM (Fill-in-the-Middle) tab-completion |
 
-> **Single-GPU note:** If your system has 1x B70 card (32GB VRAM), both models run simultaneously on `SYCL0` (~20.5 GB total VRAM), leaving plenty of room for KV cache. On multi-GPU configurations, the autocomplete engine runs on `SYCL1` so background typing never contends with agent code generation.
+> *\*On single-GPU systems (standard setup), both models run concurrently on `SYCL0` (~20.5 GB combined VRAM, leaving >11 GB free headroom for 32K context and KV-cache). If a second Arc card is detected, the startup script automatically offloads autocomplete to `SYCL1` (Card 1) so typing never contends with agent code generation.*
 
 ## Performance
 
