@@ -18,7 +18,7 @@ En komplett steg-för-steg-guide för att sätta upp en lokal AI-kodserver baser
 * **Chassi:** Fractal Design North XL Svart
 * **Operativsystem:** Ubuntu Server 26.04 LTS
 
-> **Repogrund:** Baserat på [Bygren/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server) (förgrenat från [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server)), med integrerade optimeringar och 11 Xe2-prestandapatchar från [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes), fullt stöd för Intel oneAPI Base Toolkit, Ubuntu 26.04-drivrutinsdetektering samt automatisk installation av kodmodeller för VS Code Continue.
+> **Repogrund:** Baserat på [Bygren/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server) (förgrenat från [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server)), utvecklat och djupfelsökt i parprogrammeringssamarbete med **Google DeepMind Antigravity**, med integrerade optimeringar och 11 Xe2-prestandapatchar från [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes), fullt stöd för Intel oneAPI Base Toolkit, Ubuntu 26.04-drivrutinsdetektering samt automatisk installation av kodmodeller för VS Code Continue.
 
 ---
 

@@ -18,7 +18,7 @@ A comprehensive step-by-step guide to setting up a dedicated local AI coding ser
 * **Chassis:** Fractal Design North XL Black
 * **Operating System:** Ubuntu Server 26.04 LTS (or 24.04 LTS)
 
-> **Repository Background:** Maintained by [Bygren/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server) (forked from [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server)), integrating optimizations and 11 Xe2 performance patches from [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes), native Intel oneAPI Base Toolkit support, Ubuntu 26.04 driver detection, and automated coding model provisioning for VS Code Continue.
+> **Repository Background:** Maintained by [Bygren/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server) (forked from [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server)), co-developed and debugged with **Google DeepMind Antigravity**, integrating optimizations and 11 Xe2 performance patches from [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes), native Intel oneAPI Base Toolkit support, Ubuntu 26.04 driver detection, and automated coding model provisioning for VS Code Continue.
 
 ---
 

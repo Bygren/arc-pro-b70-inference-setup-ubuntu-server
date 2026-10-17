@@ -4,6 +4,8 @@
 >
 > **Note:** Maintained by [Bygren](https://github.com/Bygren/arc-pro-b70-inference-setup-ubuntu-server), based on [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server). Adds Ubuntu 26.04 LTS compatibility, driver resilience, and script bugfixes.
 >
+> **AI Engineering & Pair Programming:** Co-developed, debugged, and optimized in continuous collaboration with **Google DeepMind Antigravity** (Advanced Agentic AI Coding Assistant).
+>
 > **Built-in Intel oneAPI & Xe2 Performance Patches:**
 > This edition integrates **Intel oneAPI Base Toolkit** (`icx`/`icpx`, DPC++, oneMKL, oneDNN) and automatically compiles **llama.cpp with native SYCL and Vulkan backends**. It incorporates the **11 Battlemage Xe2 cherry-picked patches** directly from [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes) (MoE MMVQ, Xe2 warptile, Q8_0 reorder fix, etc.) into the build so you get maximum tok/s and MoE stability out of the box without needing manual secondary patch steps.
 >
@@ -373,8 +375,10 @@ cat /var/log/gpu_thermal.log
 | Continue cannot connect from VS Code | Verify UFW firewall (`sudo ufw allow 8000/tcp && sudo ufw allow 8001/tcp`) and check service status (`systemctl status llama-agent`) |
 | Thermal watchdog triggers shutdown | Check chassis airflow and fan curves; inspect temps via `sensors \| grep -A3 'xe-pci'` |
 
-## Credits
+## Credits & Acknowledgments
 
+- **Lead Maintainer & Hardware Architecture:** [Bygren](https://github.com/Bygren)
+- **AI Engineering & Pair Programming:** Co-developed, debugged, and optimized in continuous collaboration with **Google DeepMind Antigravity** (Advanced Agentic AI Coding Assistant).
 - [Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server](https://github.com/Hal9000AIML/arc-pro-b70-inference-setup-ubuntu-server) — Original Ubuntu server inference setup
 - [Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes](https://github.com/Hal9000AIML/arc-pro-b70-ubuntu-gpu-speedup-bugfixes) — Battlemage Xe2 patches & performance tuning kit
 - [Level1Techs](https://forum.level1techs.com/t/intel-b70-launch-unboxed-and-tested/247873) — Intel Arc Pro B70 testing & benchmarks
