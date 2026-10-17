@@ -276,6 +276,64 @@ For code assistance, Qwen3-Coder 30B-A3B (MoE, ~18.8 GB) and Qwen2.5-Coder 1.5B 
 | `ZES_ENABLE_SYSMAN` | `1` | Required for xpu-smi / sysman power, frequency, and temperature monitoring |
 | `SYCL_CACHE_PERSISTENT` | `0` | Disables stale JIT kernel cache between driver and compiler updates |
 
+### Concurrent Multi-User Scaling (`--parallel`)
+
+A single Intel Arc Pro B70 server easily supports **5–15+ concurrent developers or students** in classrooms and engineering teams.
+
+#### Why llama.cpp Easily Serves Multiple Users
+In real-world coding environments, developer activity is bursty rather than continuous:
+1. **Bursty vs Continuous Load:** Developers spend 90% of their time reading, thinking, and typing code. Chat/Agent requests occur only a few times per hour per user, lasting just 1–3 seconds thanks to the GPU's **~75 tok/s** generation speed.
+2. **Built-in Micro-Queuing:** If 3 users submit prompts at the exact same fraction of a second when `--parallel 2` is set, `llama-server` does not reject requests or drop connections. It queues the third request in an internal FIFO queue and serves it immediately once the first slot finishes (typically within 1–2 seconds).
+3. **Tab Autocomplete Separation:** Fast inline code completions run on their own isolated server (port 8001) with `--parallel 4`, ensuring that micro-typing completions never contend with heavier agent requests.
+
+#### Concurrency & VRAM Budgeting
+
+The B70 card provides **32GB of high-speed VRAM**:
+* **Base Model Weights:**
+  * `Qwen3-Coder 30B (Q4_K_M)`: ~18.8 GB
+  * `Qwen2.5-Coder 1.5B (Q8_0)`: ~1.6 GB
+  * **Total Static Footprint:** ~20.4 GB (leaving **~11.6 GB free headroom** exclusively for KV cache slots)
+
+#### Scaling Profiles:
+
+| Workload / Users | Agent `--parallel` | Agent Context (`-c`) | Autocomplete `--parallel` | Effective Class/Team Size |
+|---|---|---|---|---|
+| **Default (Standard)** | `2` | `32768` (16K / slot) | `4` | **5–10 active students/devs** |
+| **High Concurrency** | `4` | `32768` (8K / slot) | `6` | **10–20 active students/devs** |
+| **Extreme Classroom** | `6` | `24576` (4K / slot) | `8` | **20–30+ students** |
+
+> *Note: For student coding assignments and typical developer tasks, 4K–8K tokens of context per slot is more than sufficient, allowing you to comfortably raise `--parallel` to 4 or 6 slots.*
+
+#### How to Scale Up `--parallel`
+
+To scale up concurrency, adjust the startup scripts on the server:
+
+1. **Edit the Agent startup script:**
+   ```bash
+   nano ~/start_agent.sh
+   ```
+   Modify the `--parallel` flag (e.g., from `2` to `4`):
+   ```bash
+   --parallel 4 \
+   ```
+
+2. **Edit the Autocomplete startup script (optional):**
+   ```bash
+   nano ~/start_autocomplete.sh
+   ```
+   Modify `--parallel` (e.g., from `4` to `6`):
+   ```bash
+   --parallel 6 \
+   ```
+
+3. **Restart the systemd services:**
+   ```bash
+   sudo systemctl restart llama-agent llama-autocomplete
+   ```
+
+4. **Verify memory allocation:**
+   Run `nvtop` to verify that total VRAM usage remains safely below 30 GB.
+
 ### Memory & System Performance
 
 With 64GB DDR5-6000 RAM and an AMD Ryzen 9 9900X CPU, all scheduler and tokenization operations run with high DDR5 memory bandwidth (~80–90 GB/s). Both models remain 100% resident in the GPU's 32GB VRAM (~20.4 GB combined), completely avoiding system swap.

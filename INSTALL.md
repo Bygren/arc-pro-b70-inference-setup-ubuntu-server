@@ -254,7 +254,20 @@ sudo systemctl stop llama-agent llama-autocomplete
 * `-fa 0`: Disables Flash Attention. SYCL Flash Attention is currently unstable on MoE on Battlemage; standard attention with the 11 Xe2 patches achieves optimal tok/s.
 * `--defrag-thold 0.1`: Triggers KV-cache defragmentation when fragmentation exceeds 10%, keeping throughput stable during long development sessions.
 * `-t 1`: Allocates 1 CPU offload thread. Additional threads cause queue contention across the PCIe/Xe2 bus on Battlemage, reducing throughput.
+* `--parallel 2` (or `-np 2`): Number of simultaneous slots for concurrent user queries. `llama-server` batches concurrent prompts and queues bursts automatically.
+* `-c 32768`: Total context window size across allocated slots.
 * `--device SYCL0`: Binds the process to the target Intel Arc Pro GPU device.
+
+### Scaling for Concurrent Users (Classrooms & Teams)
+
+A single Arc Pro B70 server easily supports **5–15+ simultaneous developers or students**:
+
+1. **How it works:** Coding is bursty. Requests take only ~1–2 seconds to complete at ~75 tok/s, leaving the GPU idle 90%+ of the time. If multiple users query at once, `llama-server` executes up to `--parallel` queries simultaneously and queues any excess requests for sub-second delivery.
+2. **Recommended Sizing Profiles:**
+   * **5–10 students/devs:** Default settings (`--parallel 2` for Agent, `--parallel 4` for Autocomplete).
+   * **10–20 students/devs:** Set `--parallel 4` for Agent in `~/start_agent.sh` and `--parallel 6` in `~/start_autocomplete.sh`.
+   * **20+ students:** Set `--parallel 6` (and `-c 24576`) for Agent, and `--parallel 8` for Autocomplete.
+3. **To apply:** Edit `~/start_agent.sh`, change `--parallel`, then restart: `sudo systemctl restart llama-agent llama-autocomplete`.
 
 ---
 

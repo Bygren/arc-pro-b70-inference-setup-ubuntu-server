@@ -254,7 +254,20 @@ sudo systemctl stop llama-agent llama-autocomplete
 * `-fa 0`: Stänger av Flash Attention. SYCL:s Flash Attention är ännu inte helt stabil på MoE på Intel B70; standardattention med de 11 Xe2-patcharna ger ändå maximal prestanda.
 * `--defrag-thold 0.1`: Defragmenterar automatiskt KV-cachen när fragmenteringen överstiger 10 %, vilket håller tok/s stabil över långa kodsessioner.
 * `-t 1`: Använder 1 CPU-avlastningstråd. Fler CPU-trådar skapar kö-kollisioner på PCIe/Xe2-arkitekturen och sänker prestandan.
+* `--parallel 2` (eller `-np 2`): Antal samtidiga beräkningsplatser (slots) för parallella användare. `llama-server` batchar samtidiga frågor och köar automatiskt toppar.
+* `-c 32768`: Total kontextstorlek fördelad över de parallella platserna.
 * `--device SYCL0`: Binder processen till specifik Intel Arc Pro-GPU.
+
+### Skala upp för fler samtidiga användare (Klassrum & Team)
+
+En enda server med Intel Arc Pro B70 hanterar enkelt **5–15+ samtidiga utvecklare eller elever**:
+
+1. **Varför det fungerar:** Kodning sker i korta stötar. Ett kodsvar tar bara 1–2 sekunder att generera i ~75 tok/s, så GPU:n är ledig över 90 % av lektionstiden. Om flera elever frågar exakt samtidigt körs upp till `--parallel` förfrågningar parallellt, och eventuella övriga ställs i en mikroskopisk kö och besvaras direkt efteråt.
+2. **Rekommenderade profiler:**
+   * **5–10 elever/utvecklare:** Standardinställningar (`--parallel 2` för Agent, `--parallel 4` för Autocomplete).
+   * **10–20 elever/utvecklare:** Sätt `--parallel 4` för Agent i `~/start_agent.sh` och `--parallel 6` i `~/start_autocomplete.sh`.
+   * **20+ elever:** Sätt `--parallel 6` (och `-c 24576`) för Agent, och `--parallel 8` för Autocomplete.
+3. **Aktivera:** Ändra i `~/start_agent.sh`, ändra `--parallel`, och starta om: `sudo systemctl restart llama-agent llama-autocomplete`.
 
 ---
 
