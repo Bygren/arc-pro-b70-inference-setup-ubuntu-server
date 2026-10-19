@@ -254,7 +254,7 @@ sudo systemctl stop llama-agent llama-autocomplete
 * `-fa 0`: Disables Flash Attention. SYCL Flash Attention is currently unstable on MoE on Battlemage; standard attention with the 11 Xe2 patches achieves optimal tok/s.
 * `-t 1`: Allocates 1 CPU offload thread. Additional threads cause queue contention across the PCIe/Xe2 bus on Battlemage, reducing throughput.
 * `--parallel 2` (or `-np 2`): Number of simultaneous slots for concurrent user queries. `llama-server` batches concurrent prompts and queues bursts automatically.
-* `-c 65536`: Total context window memory pool across allocated slots. Each slot receives `n_ctx_slot = -c / parallel` (e.g., `-c 65536` with `--parallel 2` guarantees a full 32,768 tokens (32K) per user slot).
+* `-c 32768`: Total context window memory pool across allocated slots. Each slot receives `n_ctx_slot = -c / parallel` (e.g., `-c 32768` with `--parallel 2` guarantees 16,384 tokens (16K) per user slot while preserving >10 GB free VRAM headroom on Battlemage).
 * `--device SYCL0`: Binds the process to the target Intel Arc Pro GPU device.
 
 ### Scaling for Concurrent Users (Classrooms & Teams)

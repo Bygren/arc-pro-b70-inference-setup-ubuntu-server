@@ -254,7 +254,7 @@ sudo systemctl stop llama-agent llama-autocomplete
 * `-fa 0`: Stänger av Flash Attention. SYCL:s Flash Attention är ännu inte helt stabil på MoE på Intel B70; standardattention med de 11 Xe2-patcharna ger ändå maximal prestanda.
 * `-t 1`: Använder 1 CPU-avlastningstråd. Fler CPU-trådar skapar kö-kollisioner på PCIe/Xe2-arkitekturen och sänker prestandan.
 * `--parallel 2` (eller `-np 2`): Antal samtidiga beräkningsplatser (slots) för parallella användare. `llama-server` batchar samtidiga frågor och köar automatiskt toppar.
-* `-c 65536`: Total kontextminnespool fördelad jämnt över de parallella platserna. Varje slot får `n_ctx_slot = -c / parallel` (t.ex. ger `-c 65536` med `--parallel 2` fulla 32 768 tokens (32K) per användare/slot).
+* `-c 32768`: Total kontextminnespool fördelad jämnt över de parallella platserna. Varje slot får `n_ctx_slot = -c / parallel` (t.ex. ger `-c 32768` med `--parallel 2` exakt 16 384 tokens (16K) per användare/slot samtidigt som över 10 GB VRAM hålls fritt för dynamiska beräkningsgrafer).
 * `--device SYCL0`: Binder processen till specifik Intel Arc Pro-GPU.
 
 ### Skala upp för fler samtidiga användare (Klassrum & Team)
