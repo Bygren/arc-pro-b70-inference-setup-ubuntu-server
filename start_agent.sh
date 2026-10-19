@@ -16,7 +16,7 @@ exec /opt/llama.cpp/llama-sycl-build/bin/llama-server \
     --device SYCL0 \
     -ngl 999 \
     -c 32768 \
-    --parallel 2 \
+    --parallel 1 \
     --batch-size 2048 \
     --ubatch-size 512 \
     -fa 0 \

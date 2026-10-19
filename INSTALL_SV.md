@@ -253,8 +253,8 @@ sudo systemctl stop llama-agent llama-autocomplete
 * `GGML_SYCL_DISABLE_OPT=1`: **Obligatorisk för MoE-modeller (Qwen3).** Förhindrar att modellens slot-initiering krockar med drivrutinen och stänger av servern.
 * `-fa 0`: Stänger av Flash Attention. SYCL:s Flash Attention är ännu inte helt stabil på MoE på Intel B70; standardattention med de 11 Xe2-patcharna ger ändå maximal prestanda.
 * `-t 1`: Använder 1 CPU-avlastningstråd. Fler CPU-trådar skapar kö-kollisioner på PCIe/Xe2-arkitekturen och sänker prestandan.
-* `--parallel 2` (eller `-np 2`): Antal samtidiga beräkningsplatser (slots) för parallella användare. `llama-server` batchar samtidiga frågor och köar automatiskt toppar.
-* `-c 32768`: Total kontextminnespool fördelad jämnt över de parallella platserna. Varje slot får `n_ctx_slot = -c / parallel` (t.ex. ger `-c 32768` med `--parallel 2` exakt 16 384 tokens (16K) per användare/slot samtidigt som över 10 GB VRAM hålls fritt för dynamiska beräkningsgrafer).
+* `--parallel 1` (eller `-np 1`): Optimalt för Agent- och flerfilsredigering. Samtidiga förfrågningar köas FIFO och körs i full fart (~75 tok/s), vilket förhindrar att MoE-modellen överbelastar minnesbussen.
+* `-c 32768`: Total kontextminnespool (`n_ctx_slot = -c / parallel`). Med `--parallel 1` tilldelas hela 32 768 tokens (32K) till platsen samtidigt som över 10 GB VRAM hålls fritt för dynamiska beräkningsgrafer.
 * `--device SYCL0`: Binder processen till specifik Intel Arc Pro-GPU.
 
 ### Skala upp för fler samtidiga användare (Klassrum & Team)
