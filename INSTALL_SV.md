@@ -252,10 +252,9 @@ sudo systemctl stop llama-agent llama-autocomplete
 * `UR_L0_ENABLE_RELAXED_ALLOCATION_LIMITS=1`: Tar bort Level Zeros standardspärr och låter programmet allokera upp till hela kortets 32GB minne.
 * `GGML_SYCL_DISABLE_OPT=1`: **Obligatorisk för MoE-modeller (Qwen3).** Förhindrar att modellens slot-initiering krockar med drivrutinen och stänger av servern.
 * `-fa 0`: Stänger av Flash Attention. SYCL:s Flash Attention är ännu inte helt stabil på MoE på Intel B70; standardattention med de 11 Xe2-patcharna ger ändå maximal prestanda.
-* `--defrag-thold 0.1`: Defragmenterar automatiskt KV-cachen när fragmenteringen överstiger 10 %, vilket håller tok/s stabil över långa kodsessioner.
 * `-t 1`: Använder 1 CPU-avlastningstråd. Fler CPU-trådar skapar kö-kollisioner på PCIe/Xe2-arkitekturen och sänker prestandan.
 * `--parallel 2` (eller `-np 2`): Antal samtidiga beräkningsplatser (slots) för parallella användare. `llama-server` batchar samtidiga frågor och köar automatiskt toppar.
-* `-c 32768`: Total kontextstorlek fördelad över de parallella platserna.
+* `-c 65536`: Total kontextminnespool fördelad jämnt över de parallella platserna. Varje slot får `n_ctx_slot = -c / parallel` (t.ex. ger `-c 65536` med `--parallel 2` fulla 32 768 tokens (32K) per användare/slot).
 * `--device SYCL0`: Binder processen till specifik Intel Arc Pro-GPU.
 
 ### Skala upp för fler samtidiga användare (Klassrum & Team)

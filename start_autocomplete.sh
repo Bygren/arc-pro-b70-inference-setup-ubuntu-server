@@ -25,7 +25,6 @@ exec /opt/llama.cpp/llama-sycl-build/bin/llama-server \
     --parallel 4 \
     --batch-size 1024 \
     --ubatch-size 256 \
-    --defrag-thold 0.1 \
     -fa 0 \
     --host 0.0.0.0 --port 8001 \
     --alias qwen2.5-coder-1.5b \

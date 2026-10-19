@@ -15,11 +15,10 @@ exec /opt/llama.cpp/llama-sycl-build/bin/llama-server \
     --model "${MODEL_FILE}" \
     --device SYCL0 \
     -ngl 999 \
-    -c 32768 \
+    -c 65536 \
     --parallel 2 \
     --batch-size 2048 \
     --ubatch-size 512 \
-    --defrag-thold 0.1 \
     -fa 0 \
     --host 0.0.0.0 --port 8000 \
     --alias qwen3-coder-30b \
