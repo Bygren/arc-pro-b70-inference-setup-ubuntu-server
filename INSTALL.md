@@ -244,6 +244,14 @@ For complex multi-file coding tasks, refactoring, and automated workspace editin
    * **Temperature:** `0.0` or `0.2`
 3. Click **Done**. Roo Code will now inspect your repository, execute edits with interactive diff review, and run tests via terminal tools.
 
+#### Troubleshooting Roo Code on Linux ("Could not find ripgrep binary")
+In recent VS Code updates on Linux, VS Code's internal bundled ripgrep package structure changed, which can cause newly installed or updated Roo Code extensions to fail silently without sending requests to the server (`tokensIn: 0`).
+If Roo Code ever hangs silently after prompt submission, run our automated patch script:
+```bash
+./patch_roocode_ripgrep.sh
+```
+Then reload VS Code (`Ctrl + Shift + P` -> `Developer: Reload Window`).
+
 > **Tip:** Replace `<SERVER-IP>` with the local network IP address of your server (e.g., `http://172.17.20.189:8000/v1`), or `http://localhost:8000/v1` if running VS Code directly on the host.
 
 ---

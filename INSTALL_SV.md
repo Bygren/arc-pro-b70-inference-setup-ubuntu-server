@@ -244,6 +244,14 @@ För avancerad flerfilsredigering, refaktorisering och autonoma agentuppgifter u
    * **Temperature:** `0.0` eller `0.2`
 3. Klicka på **Done**. Roo Code kan nu analysera hela kodbasen, genomföra filändringar med tydliga interaktiva diffar och köra terminaltester utan att låsa gränssnittet.
 
+#### Felsökning av Roo Code på Linux ("Could not find ripgrep binary")
+I nyare versioner av VS Code på Linux har sökvägen till den inbyggda `ripgrep`-modulen ändrats, vilket kan göra att nyligen installerade eller uppdaterade Roo Code-tillägg stannar tyst utan att skicka anrop till servern (`tokensIn: 0`).
+Om Roo Code någonsin stannar utan att svara, kör vårt automatiska patch-skript:
+```bash
+./patch_roocode_ripgrep.sh
+```
+Ladda därefter om VS Code (`Ctrl + Shift + P` $\rightarrow$ `Developer: Reload Window`).
+
 > **Tips:** Ersätt `<SERVER-IP>` med IP-adressen till din server i det lokala nätverket (t.ex. `http://172.17.20.189:8000/v1`), eller `http://localhost:8000/v1` om du kör VS Code direkt på servern.
 
 ---
