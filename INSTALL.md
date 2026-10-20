@@ -229,6 +229,21 @@ models:
 }
 ```
 
+### Option C: Autonomous Agent with Roo Code (Recommended for Multi-File Edits)
+
+For complex multi-file coding tasks, refactoring, and automated workspace editing without UI lockups, install **Roo Code** in VS Code (`code --install-extension RooVeterinaryInc.roo-cline`):
+
+1. Click the **Roo Code** icon in the VS Code Activity Bar and open Settings (⚙️).
+2. Configure the provider:
+   * **API Provider:** `OpenAI Compatible`
+   * **Base URL:** `http://<SERVER-IP>:8000/v1`
+   * **API Key:** `none`
+   * **Model ID:** `qwen3-coder-30b`
+   * **Context Window:** `32768`
+   * **Max Output Tokens:** `4096`
+   * **Temperature:** `0.0` or `0.2`
+3. Click **Done**. Roo Code will now inspect your repository, execute edits with interactive diff review, and run tests via terminal tools.
+
 > **Tip:** Replace `<SERVER-IP>` with the local network IP address of your server (e.g., `http://172.17.20.189:8000/v1`), or `http://localhost:8000/v1` if running VS Code directly on the host.
 
 ---

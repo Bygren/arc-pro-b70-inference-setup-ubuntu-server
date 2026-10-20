@@ -229,6 +229,21 @@ models:
 }
 ```
 
+### Alternativ C: Autonom Agent med Roo Code (Rekommenderas för flerfilsredigering)
+
+För avancerad flerfilsredigering, refaktorisering och autonoma agentuppgifter utan att gränssnittet hänger sig, installera **Roo Code** i VS Code (`code --install-extension RooVeterinaryInc.roo-cline`):
+
+1. Klicka på **Roo Code**-ikonen i sidomenyn i VS Code och öppna inställningarna (kugghjulet ⚙️).
+2. Konfigurera anslutningen:
+   * **API Provider:** `OpenAI Compatible`
+   * **Base URL:** `http://<SERVER-IP>:8000/v1`
+   * **API Key:** `none`
+   * **Model ID:** `qwen3-coder-30b`
+   * **Context Window:** `32768`
+   * **Max Output Tokens:** `4096`
+   * **Temperature:** `0.0` eller `0.2`
+3. Klicka på **Done**. Roo Code kan nu analysera hela kodbasen, genomföra filändringar med tydliga interaktiva diffar och köra terminaltester utan att låsa gränssnittet.
+
 > **Tips:** Ersätt `<SERVER-IP>` med IP-adressen till din server i det lokala nätverket (t.ex. `http://172.17.20.189:8000/v1`), eller `http://localhost:8000/v1` om du kör VS Code direkt på servern.
 
 ---
